@@ -21,6 +21,11 @@ on:
         type: boolean
         default: false
 
+# GITHUB_TOKEN 需 contents:write 才能创建 Release (repo 默认 read-only, 见 WRT-CORE Release 步骤)
+# reusable workflow 的 token 权限由调用方本块的 permissions 决定
+permissions:
+  contents: write
+
 jobs:
   QWRT:
     uses: ./.github/workflows/WRT-CORE.yml
