@@ -1,0 +1,70 @@
+# Auto-Sync-Upstream — 定期从 VIKINGYFY/OpenWRT-CI 同步上游, 禁用无关 workflow, 触发 QWRT 构建
+#
+#   - 纯增量 fork: 本工作流 + QWRT.yml + Scripts/PRIVATE.sh + Config/PRIVATE.txt + files/ + package/ + prebuilt/
+#     全部为新增文件, 不修改上游任何文件。
+#   - 同步策略: fetch upstream/main -> merge (保留本地增量, additive fork 通常无冲突) -> push
+#   - 禁用上游无关 workflow 用 `gh workflow disable` (仓库级状态, 不改文件, 避免与上游修改产生
+#     modify/delete 冲突; 跨同步持久)。保留 WRT-CORE.yml (QWRT 复用) + Cache-Clean.yml。
+#   - 同步成功后主动触发 QWRT.yml (gh workflow run QWRT.yml -f TEST=false), 编译京东云亚瑟固件。
+#   - 推送/触发用 AUTOSYNC_PAT (非默认 GITHUB_TOKEN), 否则无法触发下游 QWRT.yml。
+name: Auto-Sync-Upstream
+
+on:
+  schedule:
+    - cron: '0 20 * * *'   # UTC 20:00 = 北京时间 04:00 每日
+  workflow_dispatch:
+
+env:
+  UPSTREAM_REPO: VIKINGYFY/OpenWRT-CI
+  UPSTREAM_BRANCH: main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout self
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.AUTOSYNC_PAT }}
+
+      - name: Configure git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Sync upstream
+        run: |
+          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
+          git fetch upstream "${UPSTREAM_BRANCH}"
+          # additive fork (仅新增文件) 通常无冲突; 若冲突则失败退出供排查
+          git merge "upstream/${UPSTREAM_BRANCH}" --no-edit
+
+      - name: Commit & push
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "[sync] No changes (upstream unchanged since last sync)"
+          else
+            git commit -m "chore(sync): merge ${UPSTREAM_REPO}@${UPSTREAM_BRANCH}"
+            git push
+          fi
+
+      - name: Disable unused upstream workflows
+        env:
+          GH_TOKEN: ${{ secrets.AUTOSYNC_PAT }}
+        run: |
+          # 仓库级禁用 (不改动文件, 跨同步持久; 文件名据 VIKINGYFY workflows 实测)
+          for w in Auto-Clean.yml MTK-ALL.yml OWRT-ALL.yml QCA-ALL.yml WRT-TEST.yml; do
+            gh workflow disable "$w" 2>/dev/null && echo "[sync] disabled: $w" || \
+              echo "[sync] skip (not found / already disabled): $w"
+          done
+          # 保留: WRT-CORE.yml, Cache-Clean.yml, QWRT.yml, Auto-Sync-Upstream.yml
+
+      - name: Trigger QWRT build
+        env:
+          GH_TOKEN: ${{ secrets.AUTOSYNC_PAT }}
+        run: |
+          # 同步后主动编译 (TEST=false=正常编译固件; PACKAGE 留空走 PRIVATE.txt 默认)
+          gh workflow run QWRT.yml -f TEST=false || \
+            echo "[sync] QWRT.yml trigger failed (may be already running or workflow file missing)"

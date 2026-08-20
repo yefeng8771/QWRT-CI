@@ -1,0 +1,25 @@
+#!/bin/sh
+# 99-qwrt-defaults — 首启动一次性配置
+#
+# 当前策略：尽量保持默认系统行为，不主动接管 DNS，
+# 只处理服务默认状态，避免用户首次开机就被复杂代理栈卡住。
+
+set -e
+
+# sing-box eBPF shared-network 依赖 br-lan 的 TC hook；关闭会绕过 TC 的软件/硬件流量卸载。
+uci -q set firewall.@defaults[0].flow_offloading='0'
+uci -q set firewall.@defaults[0].flow_offloading_hw='0'
+
+# sing-box：默认 disabled（用户填入真实节点后再启用）
+[ -x /etc/init.d/sing-box ] && /etc/init.d/sing-box disable
+
+# easytier：默认 disabled（用户填入网络密钥后再启用）
+[ -x /etc/init.d/easytier ] && /etc/init.d/easytier disable
+
+# 若历史残留服务存在，也统一关掉，保持 sing-box 裸核运行
+[ -x /etc/init.d/momo ] && /etc/init.d/momo disable
+[ -x /etc/init.d/mosdns ] && /etc/init.d/mosdns disable
+[ -x /etc/init.d/daed ] && /etc/init.d/daed disable
+
+uci commit
+exit 0

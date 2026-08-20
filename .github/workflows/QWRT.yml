@@ -1,0 +1,39 @@
+# QWRT-CI 专用编译工作流
+#   - 仅编译 jdcloud_re-cs-02 (京东云亚瑟) IPQ60XX WiFi 版本
+#   - 静态指定品牌参数 (QWRT / 172.16.3.1)
+#   - fork 上游 VIKINGYFY/OpenWRT-CI 不改 WRT-CORE.yml;
+#     自定义经 Scripts/PRIVATE.sh (被 Packages.sh source) + Config/PRIVATE.txt 注入
+#   - Auto-Sync.yml 同步上游成功后主动触发本流
+#   - 不依赖 brand.sh 运行时改 yml, 上游同步即便覆盖 QCA workflow 也不影响本产物
+name: QWRT
+
+on:
+  # Auto-Sync 同步成功后会主动触发本流 (gh workflow run QWRT.yml -f TEST=false)
+  workflow_dispatch:
+    inputs:
+      PACKAGE:
+        description: '手动调整插件包，多个请用\n符号隔开。留空=使用 PRIVATE.txt 默认。'
+        required: false
+        default: ''
+      TEST:
+        description: '仅测试配置(不编译固件)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  QWRT:
+    uses: ./.github/workflows/WRT-CORE.yml
+    with:
+      WRT_CONFIG: IPQ60XX-WIFI-YES
+      WRT_THEME: argon
+      WRT_NAME: QWRT
+      WRT_SSID: QWRT
+      WRT_WORD: "12345678"
+      WRT_IP: 172.16.3.1
+      WRT_PW: ${{ secrets.QWRT_PW }}
+      WRT_REPO: https://github.com/VIKINGYFY/immortalwrt.git
+      WRT_BRANCH: main
+      WRT_SOURCE: VIKINGYFY/immortalwrt
+      WRT_PACKAGE: ${{ inputs.PACKAGE }}
+      WRT_TEST: ${{ inputs.TEST }}

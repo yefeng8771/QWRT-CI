@@ -1,0 +1,142 @@
+{
+  "log": {
+    "level": "info",
+    "timestamp": true,
+    "output": "/var/log/sing-box.log"
+  },
+
+  "dns": {
+    "servers": [
+      { "tag": "remote", "type": "https", "server": "1.1.1.1", "detour": "PROXY" },
+      { "tag": "local",  "type": "udp",   "server": "127.0.0.1", "server_port": 5335 },
+      { "tag": "fakeip", "type": "fakeip",
+        "inet4_range": "198.18.0.0/15",
+        "inet6_range": "fc00::/18" }
+    ],
+    "rules": [
+      { "clash_mode": "Direct", "action": "route", "server": "local"  },
+      { "clash_mode": "Global", "action": "route", "server": "remote" },
+      { "rule_set": "geosite-cn", "action": "route", "server": "local" },
+      { "query_type": ["A", "AAAA"], "action": "route", "server": "fakeip" }
+    ],
+    "final": "local",
+    "independent_cache": true,
+    "cache_capacity": 8192
+  },
+
+  "inbounds": [
+    {
+      "type": "direct",
+      "tag": "dns-in",
+      "listen": "::",
+      "listen_port": 7800,
+      "sniff": false
+    },
+    {
+      "type": "ebpf",
+      "tag": "ebpf-in",
+      "dns_mode": "hijack",
+      "cgroup_enabled": false,
+      "bypass_private_address": true,
+      "shared_network": {
+        "enabled": true,
+        "include_interface": ["br-lan"],
+        "tc_priority": 1
+      }
+    }
+  ],
+
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "PROXY",
+      "outbounds": ["DIRECT", "AUTO", "🚀 节点示例-1", "🚀 节点示例-2"],
+      "default": "DIRECT"
+    },
+    {
+      "type": "urltest",
+      "tag": "AUTO",
+      "outbounds": ["🚀 节点示例-1", "🚀 节点示例-2"],
+      "url": "https://www.gstatic.com/generate_204",
+      "interval": "3m",
+      "tolerance": 50
+    },
+    { "type": "selector", "tag": "CN",    "outbounds": ["DIRECT", "PROXY"], "default": "DIRECT" },
+    { "type": "selector", "tag": "Final", "outbounds": ["PROXY", "DIRECT"], "default": "PROXY"  },
+    { "type": "direct",  "tag": "DIRECT" },
+    { "type": "block",   "tag": "REJECT" },
+
+    {
+      "type": "vless",
+      "tag": "🚀 节点示例-1",
+      "server": "x.x.x.x",
+      "server_port": 443,
+      "uuid": "00000000-0000-0000-0000-000000000000",
+      "flow": "xtls-rprx-vision",
+      "tls": {
+        "enabled": true,
+        "server_name": "example.com",
+        "utls": { "enabled": true, "fingerprint": "chrome" }
+      }
+    },
+    {
+      "type": "trojan",
+      "tag": "🚀 节点示例-2",
+      "server": "y.y.y.y",
+      "server_port": 443,
+      "password": "REPLACE_ME",
+      "tls": { "enabled": true }
+    }
+  ],
+
+  "route": {
+    "auto_detect_interface": true,
+    "final": "Final",
+    "rules": [
+      { "action": "sniff" },
+      { "inbound": "dns-in", "action": "hijack-dns" },
+      { "protocol": "dns",   "action": "hijack-dns" },
+
+      { "ip_is_private": true, "outbound": "DIRECT" },
+      { "ip_cidr": ["10.10.1.0/24"], "outbound": "DIRECT" },
+
+      { "clash_mode": "Direct", "outbound": "DIRECT" },
+      { "clash_mode": "Global", "outbound": "PROXY"  },
+
+      { "rule_set": "geosite-category-ads-all", "outbound": "REJECT" },
+      { "rule_set": "geosite-cn", "outbound": "CN" },
+      { "rule_set": "geoip-cn",   "outbound": "CN" }
+    ],
+    "rule_set": [
+      {
+        "type": "remote", "tag": "geosite-cn", "format": "binary",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs",
+        "download_detour": "DIRECT", "update_interval": "24h"
+      },
+      {
+        "type": "remote", "tag": "geoip-cn", "format": "binary",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs",
+        "download_detour": "DIRECT", "update_interval": "24h"
+      },
+      {
+        "type": "remote", "tag": "geosite-category-ads-all", "format": "binary",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ads-all.srs",
+        "download_detour": "DIRECT", "update_interval": "24h"
+      }
+    ]
+  },
+
+  "experimental": {
+    "cache_file": {
+      "enabled": true,
+      "path": "/etc/sing-box/cache.db",
+      "store_fakeip": true,
+      "store_rdrc": true
+    },
+    "clash_api": {
+      "external_controller": "0.0.0.0:9090",
+      "external_ui": "/etc/sing-box/ui",
+      "default_mode": "rule"
+    }
+  }
+}
