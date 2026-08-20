@@ -31,7 +31,7 @@ jobs:
       WRT_SSID: QWRT
       WRT_WORD: "12345678"
       WRT_IP: 172.16.3.1
-      WRT_PW: ${{ secrets.QWRT_PW }}
+      WRT_PW: "12345678"
       WRT_REPO: https://github.com/VIKINGYFY/immortalwrt.git
       WRT_BRANCH: main
       WRT_SOURCE: VIKINGYFY/immortalwrt
