@@ -26,8 +26,10 @@ if ! command -v jq >/dev/null 2>&1; then
     sudo apt-get update -qq && sudo apt-get install -y -qq jq
 fi
 
-# ============ [1] StunDeck 包 + prebuilt 二进制 ============
-echo "[qwrt] [1/4] Injecting stundeck package + build metadata..."
+# ============ [1] StunDeck opkg 包 + release 裸二进制 ============
+echo "[qwrt] [1/4] Injecting stundeck opkg package + pulling latest release binaries..."
+
+# [1a] opkg 包源 (init/config/Makefile + DEPENDS natmapt) 来自本仓
 if [ -d "$GW/package/stundeck" ]; then
     rm -rf ./stundeck
     cp -a "$GW/package/stundeck" ./stundeck
@@ -36,17 +38,53 @@ else
     echo "[qwrt]   ERROR: $GW/package/stundeck not found" >&2; exit 1
 fi
 
-# stundeck Makefile 顶: -include $(TOPDIR)/stundeck-build.mk  (TOPDIR = wrt 根 = ..)
-# 指向仓库 prebuilt/ (含 stundeck + stundeck-notify 预编译 aarch64 二进制)
-if [ -f "$GW/prebuilt/stundeck" ] && [ -f "$GW/prebuilt/stundeck-notify" ]; then
-    {
-        echo "STUNDECK_BIN_DIR:=${GW}/prebuilt"
-        echo "STUNDECK_VERSION:=0.1.0"
-    } > "${WRT_ROOT}/stundeck-build.mk"
-    echo "[qwrt]   stundeck-build.mk -> ${WRT_ROOT}/stundeck-build.mk (BIN_DIR=${GW}/prebuilt)"
-else
-    echo "[qwrt]   ERROR: prebuilt binaries missing in $GW/prebuilt" >&2; exit 1
+# [1b] stundeck 二进制: 从 yefeng8771/stundeck 最新 release 拉裸二进制 tarball
+#   (sing-box[4] 风格: 构建时下载, 不提交二进制到本仓, 自动跟踪上游 release)
+#   与 sing-box 不同: stundeck 是 opkg 包, 二进制由后续 make package/install 步
+#   从 STUNDECK_BIN_DIR 拷贝 -> 必须用持久目录 (不能用 trap 清理的 mktemp).
+STUNDECK_REPO="yefeng8771/stundeck"
+STUNDECK_RELEASE_ARCH="arm64"
+GH_HEADERS=(-H 'Accept: application/vnd.github+json')
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+    GH_HEADERS+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
 fi
+
+# 最新 (非 prerelease/draft) release
+STUNDECK_REL_JSON=$(curl -fsSL "${GH_HEADERS[@]}" \
+    "https://api.github.com/repos/${STUNDECK_REPO}/releases/latest")
+STUNDECK_TAG=$(printf '%s' "$STUNDECK_REL_JSON" | jq -r '.tag_name')
+if [ -z "$STUNDECK_TAG" ] || [ "$STUNDECK_TAG" = "null" ]; then
+    echo "[qwrt]   ERROR: cannot resolve latest stundeck release tag" >&2; exit 1
+fi
+echo "[qwrt]   stundeck latest release: ${STUNDECK_TAG}"
+
+STUNDECK_TARBALL_URL=$(printf '%s' "$STUNDECK_REL_JSON" | jq -r --arg arch "$STUNDECK_RELEASE_ARCH" \
+    '.assets[] | select(.name | endswith("-linux-" + $arch + ".tar.gz")) | .browser_download_url')
+if [ -z "$STUNDECK_TARBALL_URL" ] || [ "$STUNDECK_TARBALL_URL" = "null" ]; then
+    echo "[qwrt]   ERROR: no *-linux-${STUNDECK_RELEASE_ARCH}.tar.gz asset in ${STUNDECK_REPO} ${STUNDECK_TAG}" >&2; exit 1
+fi
+echo "[qwrt]   asset: $(basename "$STUNDECK_TARBALL_URL")"
+
+STUNDECK_BIN_DIR="${GW}/stundeck-prebuilt"
+rm -rf "$STUNDECK_BIN_DIR"
+mkdir -p "$STUNDECK_BIN_DIR"
+curl -fsSL "${GH_HEADERS[@]}" "$STUNDECK_TARBALL_URL" -o "$STUNDECK_BIN_DIR/stundeck.tar.gz"
+tar -xzf "$STUNDECK_BIN_DIR/stundeck.tar.gz" -C "$STUNDECK_BIN_DIR"
+rm -f "$STUNDECK_BIN_DIR/stundeck.tar.gz"
+if [ ! -f "$STUNDECK_BIN_DIR/stundeck" ] || [ ! -f "$STUNDECK_BIN_DIR/stundeck-notify" ]; then
+    echo "[qwrt]   ERROR: tarball missing stundeck / stundeck-notify" >&2; exit 1
+fi
+echo "[qwrt]   stundeck binaries -> ${STUNDECK_BIN_DIR} (stundeck + stundeck-notify)"
+
+# stundeck Makefile 顶: -include $(TOPDIR)/stundeck-build.mk  (TOPDIR = wrt 根 = ..)
+# version 从 release tag 去掉前导 'v': v0.1.202609021106 -> 0.1.202609021106
+STUNDECK_VERSION="${STUNDECK_TAG#v}"
+{
+    echo "STUNDECK_BIN_DIR:=${STUNDECK_BIN_DIR}"
+    echo "STUNDECK_VERSION:=${STUNDECK_VERSION}"
+} > "${WRT_ROOT}/stundeck-build.mk"
+echo "[qwrt]   stundeck-build.mk -> ${WRT_ROOT}/stundeck-build.mk (BIN_DIR=${STUNDECK_BIN_DIR}, VER=${STUNDECK_VERSION})"
+
 
 # ============ [2] NATMapt + LuCI (muink, feeds 无) ============
 echo "[qwrt] [2/4] Cloning muink natmapt + luci-app-natmapt..."
