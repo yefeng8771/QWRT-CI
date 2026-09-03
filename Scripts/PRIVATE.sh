@@ -162,8 +162,10 @@ install -m 0755 "$SINGBOX_BIN" "$WRT_FILES/usr/bin/sing-box"
 echo "[qwrt]   sing-box -> ${WRT_FILES}/usr/bin/sing-box"
 
 # ============ [5] Patch syncthing feed Makefile to RC v2.1.4-rc.2 ============
-# immortalwrt feed 默认锁 stable 2.1.3; 用户要上游 rc 2.1.4-rc.2, 故 sed 强改
-# PKG_VERSION+PKG_HASH(rc source tarball sha256 已本地校验). 时序: feeds install 后, defconfig 前.
+# immortalwrt feed 默认锁 stable 2.1.3; 用户要上游 rc 2.1.4-rc.2, 故 sed 强改.
+# 解耦: PKG_VERSION=2.1.4_rc2 (apk合法包版本, _rc=rc suffix), 引入 PKG_SOURCE_VERSION=2.1.4-rc.2
+#       供 PKG_SOURCE/URL/BUILD_DIR/LDFLAGS 用 (源码目录名=2.1.4-rc.2). PKG_HASH=rc tarball sha256 已校验.
+# 根因: 旧 PKG_VERSION=2.1.4-rc.2 致 apk 包版本 "2.1.4-rc.2-r1" 非法 (Error99). 时序: feeds install 后, defconfig 前.
 echo "[qwrt] [5/5] Patching syncthing feed Makefile to RC v2.1.4-rc.2..."
 SYNCTHING_MK=""
 if [ -d "${WRT_ROOT}/feeds" ]; then
@@ -171,15 +173,16 @@ if [ -d "${WRT_ROOT}/feeds" ]; then
 fi
 if [ -n "$SYNCTHING_MK" ]; then
     sed -i \
-        -e 's|^PKG_VERSION:=.*|PKG_VERSION:=2.1.4-rc.2|' \
+        -e 's|^PKG_VERSION:=.*|PKG_VERSION:=2.1.4_rc2\nPKG_SOURCE_VERSION:=2.1.4-rc.2|' \
+        -e 's|$(PKG_VERSION)|$(PKG_SOURCE_VERSION)|g' \
         -e 's|^PKG_HASH:=.*|PKG_HASH:=bf51db8f7ba978e48580e175aeeb93c2c18e53cde8fac439a2ac0277007c63b8|' \
         "$SYNCTHING_MK"
     echo "[qwrt]   patched: $SYNCTHING_MK"
-    if grep -qE '^PKG_VERSION:=2.1.4-rc.2' "$SYNCTHING_MK"; then
-        grep -E '^(PKG_VERSION|PKG_HASH):=' "$SYNCTHING_MK"
-        echo "[qwrt]   syncthing -> rc v2.1.4-rc.2 (source sha256 verified)"
+    if grep -qE '^PKG_VERSION:=2.1.4_rc2' "$SYNCTHING_MK"; then
+        grep -E '^(PKG_VERSION|PKG_SOURCE_VERSION|PKG_HASH):=' "$SYNCTHING_MK"
+        echo "[qwrt]   syncthing -> rc v2.1.4-rc.2 (pkgver 2.1.4_rc2 apk-legal; source uses PKG_SOURCE_VERSION, sha256 verified)"
     else
-        echo "[qwrt]   ERROR: sed did not set PKG_VERSION=2.1.4-rc.2" >&2; exit 1
+        echo "[qwrt]   ERROR: sed did not set PKG_VERSION=2.1.4_rc2" >&2; exit 1
     fi
 else
     echo "[qwrt]   ERROR: syncthing Makefile not found in ${WRT_ROOT}/feeds/" >&2; exit 1
