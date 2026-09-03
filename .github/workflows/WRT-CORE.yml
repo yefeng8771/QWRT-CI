@@ -155,22 +155,6 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Patch Syncthing to RC v2.1.4-rc.2
-        run: |
-          cd ./wrt/
-
-          SYNCTHING_MK=$(find feeds -path '*/syncthing/Makefile' -type f | head -1)
-          if [ -n "$SYNCTHING_MK" ]; then
-            sed -i \
-              -e 's|^PKG_VERSION:=.*|PKG_VERSION:=2.1.4-rc.2|' \
-              -e 's|^PKG_HASH:=.*|PKG_HASH:=bf51db8f7ba978e48580e175aeeb93c2c18e53cde8fac439a2ac0277007c63b8|' \
-              "$SYNCTHING_MK"
-            echo "Patched syncthing Makefile: $SYNCTHING_MK"
-            grep -E '^(PKG_VERSION|PKG_HASH|PKG_SOURCE|PKG_SOURCE_URL):=' "$SYNCTHING_MK"
-          else
-            echo "ERROR: syncthing Makefile not found in feeds/" && exit 1
-          fi
-
       - name: Custom Packages
         run: |
           cd ./wrt/package/

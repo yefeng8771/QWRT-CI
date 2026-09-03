@@ -25,6 +25,7 @@ on:
 # reusable workflow 的 token 权限由调用方本块的 permissions 决定
 permissions:
   contents: write
+  actions: write  # WRT-CORE Update Caches 步 gh cache delete 需 actions:write, 否则 HTTP 403
 
 jobs:
   QWRT:

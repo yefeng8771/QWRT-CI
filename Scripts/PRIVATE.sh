@@ -9,6 +9,7 @@
 #   [2] clone muink natmapt + luci-app-natmapt (immortalwrt feeds 无 natmapt, 必须自带)
 #   [3] 合并 files/ 覆盖层到 wrt/files/ (sing-box init/config + uci-defaults)
 #   [4] 下载注入 reF1nd sing-box prerelease (linux-arm64-musl, with_ebpf) 到 wrt/files/usr/bin/
+#   [5] sed 改 feeds/syncthing Makefile 指向上游 rc v2.1.4-rc.2 (feed 默认锁 stable 2.1.3, sha256 已校验)
 #
 # 时序: 本步在 .config 生成之前 → 不能读 .config 探测架构, 故硬编码 aarch64
 #        (jdcloud_re-cs-02 = IPQ60XX = ARMv8/aarch64)
@@ -159,5 +160,29 @@ fi
 mkdir -p "$WRT_FILES/usr/bin"
 install -m 0755 "$SINGBOX_BIN" "$WRT_FILES/usr/bin/sing-box"
 echo "[qwrt]   sing-box -> ${WRT_FILES}/usr/bin/sing-box"
+
+# ============ [5] Patch syncthing feed Makefile to RC v2.1.4-rc.2 ============
+# immortalwrt feed 默认锁 stable 2.1.3; 用户要上游 rc 2.1.4-rc.2, 故 sed 强改
+# PKG_VERSION+PKG_HASH(rc source tarball sha256 已本地校验). 时序: feeds install 后, defconfig 前.
+echo "[qwrt] [5/5] Patching syncthing feed Makefile to RC v2.1.4-rc.2..."
+SYNCTHING_MK=""
+if [ -d "${WRT_ROOT}/feeds" ]; then
+    SYNCTHING_MK=$(find "${WRT_ROOT}/feeds" -path '*/syncthing/Makefile' -type f 2>/dev/null | head -n 1 || true)
+fi
+if [ -n "$SYNCTHING_MK" ]; then
+    sed -i \
+        -e 's|^PKG_VERSION:=.*|PKG_VERSION:=2.1.4-rc.2|' \
+        -e 's|^PKG_HASH:=.*|PKG_HASH:=bf51db8f7ba978e48580e175aeeb93c2c18e53cde8fac439a2ac0277007c63b8|' \
+        "$SYNCTHING_MK"
+    echo "[qwrt]   patched: $SYNCTHING_MK"
+    if grep -qE '^PKG_VERSION:=2.1.4-rc.2' "$SYNCTHING_MK"; then
+        grep -E '^(PKG_VERSION|PKG_HASH):=' "$SYNCTHING_MK"
+        echo "[qwrt]   syncthing -> rc v2.1.4-rc.2 (source sha256 verified)"
+    else
+        echo "[qwrt]   ERROR: sed did not set PKG_VERSION=2.1.4-rc.2" >&2; exit 1
+    fi
+else
+    echo "[qwrt]   ERROR: syncthing Makefile not found in ${WRT_ROOT}/feeds/" >&2; exit 1
+fi
 
 echo "[qwrt] === PRIVATE.sh done ==="
