@@ -5,7 +5,8 @@
 #   - 同步策略: fetch upstream/main -> merge (保留本地增量, additive fork 通常无冲突) -> push
 #   - 禁用上游无关 workflow 用 `gh workflow disable` (仓库级状态, 不改文件, 避免与上游修改产生
 #     modify/delete 冲突; 跨同步持久)。保留 WRT-CORE.yml (QWRT 复用) + Cache-Clean.yml。
-#   - 同步成功后主动触发 QWRT.yml (gh workflow run QWRT.yml -f TEST=false), 编译京东云亚瑟固件。
+#   - 仅当同步产生实际变更(commit+push)后触发 QWRT.yml (gh workflow run QWRT.yml -f TEST=false)
+#     编译京东云亚瑟固件; 上游无变更则当日不编译 (手动补编译: gh workflow run QWRT.yml -f TEST=false)。
 #   - 推送/触发用 AUTOSYNC_PAT (非默认 GITHUB_TOKEN), 否则无法触发下游 QWRT.yml。
 name: Auto-Sync-Upstream
 
@@ -41,18 +42,24 @@ jobs:
           git merge "upstream/${UPSTREAM_BRANCH}" --no-edit
 
       - name: Commit & push
+        id: push
         run: |
           git add -A
           if git diff --cached --quiet; then
             echo "[sync] No changes (upstream unchanged since last sync)"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             git commit -m "chore(sync): merge ${UPSTREAM_REPO}@${UPSTREAM_BRANCH}"
             git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Disable unused upstream workflows
         env:
           GH_TOKEN: ${{ secrets.AUTOSYNC_PAT }}
+          # gh 在含 upstream remote 的工作树内会把仓库解析为 upstream(VIKINGYFY),
+          # 必须用 GH_REPO 显式锚定本仓, 否则 disable/触发全部打到上游并被 || 吞成绿色成功
+          GH_REPO: ${{ github.repository }}
         run: |
           # 仓库级禁用 (不改动文件, 跨同步持久; 文件名据 VIKINGYFY workflows 实测)
           for w in Auto-Clean.yml MTK-ALL.yml OWRT-ALL.yml QCA-ALL.yml WRT-TEST.yml; do
@@ -62,9 +69,12 @@ jobs:
           # 保留: WRT-CORE.yml, Cache-Clean.yml, QWRT.yml, Auto-Sync-Upstream.yml
 
       - name: Trigger QWRT build
+        if: steps.push.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.AUTOSYNC_PAT }}
+          # 同上: gh 多 remote 优先 upstream -> 曾 404 on VIKINGYFY/OpenWRT-CI (其上无 QWRT.yml)
+          GH_REPO: ${{ github.repository }}
         run: |
-          # 同步后主动编译 (TEST=false=正常编译固件; PACKAGE 留空走 PRIVATE.txt 默认)
+          # 仅上游有实际变更才编译 (TEST=false=正常编译固件; PACKAGE 留空走 PRIVATE.txt 默认)
           gh workflow run QWRT.yml -f TEST=false || \
             echo "[sync] QWRT.yml trigger failed (may be already running or workflow file missing)"
