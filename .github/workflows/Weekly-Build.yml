@@ -81,8 +81,6 @@ jobs:
             (.githubRelease[] | "  - \(.name): `\(.currentTag)` \(.currentSha256[0:12]//"")") +
             "\n### Git 仓库\n" +
             (.gitRepo[] | "  - \(.name): `\(.currentCommit[0:7]//"")`") +
-            "\n### Feed 补丁\n" +
-            (.feedPatch[] | "  - \(.name): 锁定 `\(.pkgVersion)` SHA256: `\(.pkgHash[0:12])`") +
             "\n### 上游\n" +
             "  - CI: `\(.upstream.ciRepo)` @ `\(.upstream.currentCiCommit[0:7]//"—")`" +
             "\n  - 源码: `\(.upstream.sourceRepo)` @ `\(.upstream.currentSourceCommit[0:7]//"—")`"
