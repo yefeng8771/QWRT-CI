@@ -56,11 +56,11 @@ describe('renderReport', () => {
 
   it('rel 项 sourceTag 与 to 不匹配时告警', () => {
     const items = [
-      { _kind: 'rel', name: 'stundeck', status: 'unchanged', to: 'v0.1.202609021106', sourceTag: 'v0.1.2' },
+      { _kind: 'rel', name: 'stundeck', status: 'unchanged', to: 'v0.1.202609021106', sourceTag: 'v0.2.0' },
     ]
     const { body } = renderReport(items)
     assert.match(body, /需人工介入/)
-    assert.match(body, /构建层.*落后/)
+    assert.match(body, /构建层.*跟进/)
   })
 
   it('status: unavailable 不计入 updated/unchanged', () => {

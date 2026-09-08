@@ -12,12 +12,30 @@ import { pathToFileURL } from 'node:url'
 
 const short = (sha) => (sha ? sha.slice(0, 7) : '—')
 
-// 宽松版本比较：按 . - + 切段取整数逐位比大小
+// 宽松版本比较：按 . - + 切段，逐位比大小。
+// 处理规则：
+//   - 纯数字段按数值比较
+//   - 非数字段（rc/alpha/beta 等）按字符串比较
+//   - 一方先耗尽时，剩余段若含非数字则视为预发布（小于稳定版），否则视为更详细（大于简化版）
+//   例如：2.1.4_rc2 < 2.1.4 < 2.1.4.1
 export function compareVer(a, b) {
-  const pa = String(a).split(/[.\-+_]/).map((x) => parseInt(x, 10) || 0)
-  const pb = String(b).split(/[.\-+_]/).map((x) => parseInt(x, 10) || 0)
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0)
+  const pa = String(a).split(/[.\-+_]/)
+  const pb = String(b).split(/[.\-+_]/)
+  const maxLen = Math.max(pa.length, pb.length)
+  for (let i = 0; i < maxLen; i++) {
+    const sa = pa[i]
+    const sb = pb[i]
+    // 某一方已耗尽
+    if (sa === undefined) return sb && !/^\d+$/.test(sb) ? 1 : -1
+    if (sb === undefined) return sa && !/^\d+$/.test(sa) ? -1 : 1
+    // 双方都存在
+    const na = parseInt(sa, 10)
+    const nb = parseInt(sb, 10)
+    if (!isNaN(na) && !isNaN(nb)) {
+      if (na !== nb) return na - nb
+    } else {
+      if (sa !== sb) return sa < sb ? -1 : 1
+    }
   }
   return 0
 }
