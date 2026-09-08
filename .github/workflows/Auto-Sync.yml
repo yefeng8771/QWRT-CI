@@ -1,19 +1,29 @@
-# Auto-Sync-Upstream — 定期从 VIKINGYFY/OpenWRT-CI 同步上游, 禁用无关 workflow, 触发 QWRT 构建
+# 每日从 VIKINGYFY/OpenWRT-CI 强制同步上游，并维持无关 workflow 的禁用状态。
 #
-#   - 纯增量 fork: 本工作流 + QWRT.yml + Scripts/PRIVATE.sh + Config/PRIVATE.txt + files/ + package/ + prebuilt/
-#     全部为新增文件, 不修改上游任何文件。
-#   - 同步策略: fetch upstream/main -> merge (保留本地增量, additive fork 通常无冲突) -> push
-#   - 禁用上游无关 workflow 用 `gh workflow disable` (仓库级状态, 不改文件, 避免与上游修改产生
-#     modify/delete 冲突; 跨同步持久)。保留 WRT-CORE.yml (QWRT 复用) + Cache-Clean.yml。
-#   - 仅当同步产生实际变更(commit+push)后触发 QWRT.yml (gh workflow run QWRT.yml -f TEST=false)
-#     编译京东云亚瑟固件; 上游无变更则当日不编译 (手动补编译: gh workflow run QWRT.yml -f TEST=false)。
-#   - 推送/触发用 AUTOSYNC_PAT (非默认 GITHUB_TOKEN), 否则无法触发下游 QWRT.yml。
-name: Auto-Sync-Upstream
+# 纯增量 fork：本仓自有文件（QWRT.yml / Auto-Sync.yml / Track-Packages.yml /
+# Weekly-Build.yml / Notify.yml / QWRT-Guard.yml / Scripts/PRIVATE.sh /
+# Config/PRIVATE.txt / .github/packages.json / files/ / package/）在上游均不存在，
+# 故 -X theirs 不会触及它们。
+#
+# ⚠️ 硬约束：启用 -X theirs 后，一旦修改任何上游文件，改动会在下次同步时被静默吞掉。
+# 所有自定义必须走新增文件 + 上游原生钩子
+# （Packages.sh 会 source PRIVATE.sh；Settings.sh 会 cat PRIVATE.txt）。
+#
+# 本流不再触发编译，编译由 Weekly-Build.yml 每周无条件执行。
+name: 每日同步上游
 
 on:
   schedule:
-    - cron: '0 20 * * *'   # UTC 20:00 = 北京时间 04:00 每日
+    - cron: '0 20 * * *'   # 每日 04:00 北京时间（= 前日 20:00 UTC）
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 同步总是取最新上游，后续运行可覆盖进行中的旧运行
+concurrency:
+  group: auto-sync
+  cancel-in-progress: true
 
 env:
   UPSTREAM_REPO: VIKINGYFY/OpenWRT-CI
@@ -21,60 +31,93 @@ env:
 
 jobs:
   sync:
+    name: 同步上游并校正 workflow 状态
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: Checkout self
+      - name: 拉取代码
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.AUTOSYNC_PAT }}
 
-      - name: Configure git
+      - name: 配置 Git 身份
         run: |
+          set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Sync upstream
+      - name: 强制合并上游
+        id: merge
+        env:
+          GH_TOKEN: ${{ secrets.AUTOSYNC_PAT }}
         run: |
+          set -euo pipefail
           git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
-          git fetch upstream "${UPSTREAM_BRANCH}"
-          # additive fork (仅新增文件) 通常无冲突; 若冲突则失败退出供排查
-          git merge "upstream/${UPSTREAM_BRANCH}" --no-edit
+          git fetch upstream "$UPSTREAM_BRANCH"
 
-      - name: Commit & push
-        id: push
-        run: |
-          git add -A
-          if git diff --cached --quiet; then
-            echo "[sync] No changes (upstream unchanged since last sync)"
+          before="$(git rev-parse HEAD)"
+          upstream_head="$(git rev-parse "upstream/${UPSTREAM_BRANCH}")"
+          echo "upstream_head=$upstream_head" >> "$GITHUB_OUTPUT"
+
+          # -X theirs 仅在冲突 hunk 上偏向上游；自有文件在上游不存在，不受影响。
+          # 绝不可用 git reset --hard upstream/main，那会抹掉全部自有增量文件。
+          git merge -X theirs "upstream/${UPSTREAM_BRANCH}" \
+            --no-edit -m "chore(sync): 强制合并 ${UPSTREAM_REPO}@${upstream_head:0:7}"
+
+          if [ "$before" = "$(git rev-parse HEAD)" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "上游无变更，跳过推送"
           else
-            git commit -m "chore(sync): merge ${UPSTREAM_REPO}@${UPSTREAM_BRANCH}"
-            git push
+            git push origin "HEAD:${GITHUB_REF_NAME}"
             echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "已同步至 ${upstream_head:0:7}"
           fi
 
-      - name: Disable unused upstream workflows
+      - name: 校正无关 workflow 的禁用状态
+        # gh 在含 upstream remote 的工作树内会把仓库解析为 upstream(VIKINGYFY),
+        # 必须用 GH_REPO 显式锚定本仓
         env:
           GH_TOKEN: ${{ secrets.AUTOSYNC_PAT }}
-          # gh 在含 upstream remote 的工作树内会把仓库解析为 upstream(VIKINGYFY),
-          # 必须用 GH_REPO 显式锚定本仓, 否则 disable/触发全部打到上游并被 || 吞成绿色成功
           GH_REPO: ${{ github.repository }}
         run: |
-          # 仓库级禁用 (不改动文件, 跨同步持久; 文件名据 VIKINGYFY workflows 实测)
-          for w in Auto-Clean.yml MTK-ALL.yml OWRT-ALL.yml QCA-ALL.yml WRT-TEST.yml; do
-            gh workflow disable "$w" 2>/dev/null && echo "[sync] disabled: $w" || \
-              echo "[sync] skip (not found / already disabled): $w"
+          set -euo pipefail
+          failed=0
+          # 保留 WRT-CORE.yml（QWRT.yml 复用）与本仓自有 workflow；其余上游 workflow 全部禁用。
+          # 用仓库级 disable 而非删文件，避免与上游修改产生 modify/delete 冲突，且跨同步持久。
+          # Auto-Clean.yml 必须保持禁用：其 releases_keep_latest=0 + delete_tags=true
+          # 会每天清空所有 release 与 tag，与周编译节奏严重冲突。
+          for wf in Auto-Clean.yml MTK-ALL.yml OWRT-ALL.yml QCA-ALL.yml WRT-TEST.yml Cache-Clean.yml; do
+            state="$(gh workflow view "$wf" --json state -q .state 2>/dev/null || echo missing)"
+            case "$state" in
+              missing)
+                echo "不存在，跳过：$wf" ;;
+              disabled_manually|disabled_inactivity)
+                echo "已禁用：$wf" ;;
+              *)
+                if gh workflow disable "$wf"; then
+                  echo "::warning::$wf 此前状态为 $state，已重新禁用"
+                else
+                  echo "::error::禁用失败：$wf"
+                  failed=1
+                fi ;;
+            esac
           done
-          # 保留: WRT-CORE.yml, Cache-Clean.yml, QWRT.yml, Auto-Sync-Upstream.yml
+          exit $failed
 
-      - name: Trigger QWRT build
-        if: steps.push.outputs.changed == 'true'
+      - name: 汇总
+        if: always()
         env:
-          GH_TOKEN: ${{ secrets.AUTOSYNC_PAT }}
-          # 同上: gh 多 remote 优先 upstream -> 曾 404 on VIKINGYFY/OpenWRT-CI (其上无 QWRT.yml)
-          GH_REPO: ${{ github.repository }}
+          CHANGED: ${{ steps.merge.outputs.changed }}
+          HEAD_SHA: ${{ steps.merge.outputs.upstream_head }}
         run: |
-          # 仅上游有实际变更才编译 (TEST=false=正常编译固件; PACKAGE 留空走 PRIVATE.txt 默认)
-          gh workflow run QWRT.yml -f TEST=false || \
-            echo "[sync] QWRT.yml trigger failed (may be already running or workflow file missing)"
+          set -euo pipefail
+          {
+            echo "## 上游同步"
+            echo
+            if [ "$CHANGED" = "true" ]; then
+              echo "- 已同步 \`${UPSTREAM_REPO}\` → \`${HEAD_SHA:0:7}\`"
+            else
+              echo "- 上游无变更"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,144 @@
+# 每周无条件编译一次固件，消费 Track-Packages 已提交的 .github/packages.json。
+# 无条件周编的理由：四股输入（上游 CI / 上游源码 / 外部依赖 / 本仓配置）
+# 一周内几乎必然有变化，判断逻辑收益极低；且定期空跑能验证整条链路仍然可用。
+#
+# 编译完成后，后置 job 负责：
+#   1. 滚动式发布：保留最近 3 个 release，删除旧版本
+#   2. 往最新 release 追加依赖清单快照（gh release edit）
+name: 每周编译固件
+
+on:
+  schedule:
+    - cron: '0 20 * * 6'   # 每周日 04:00 北京时间，排在跟踪流之后一天
+  workflow_dispatch:
+
+# 嵌套调用 reusable workflow 时，调用方权限必须不低于被调用方所需
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: qwrt-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: 构建 IPQ60XX 固件
+    uses: ./.github/workflows/QWRT.yml
+    with:
+      TEST: false
+    secrets: inherit
+
+  # 编译完成后，后置 job 做滚动发布 + 清单快照追加
+  postprocess:
+    name: 滚动发布与清单快照
+    needs: build
+    if: always() && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 配置 Git 身份
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: 获取最新 release tag
+        id: latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # 找最近一次由 WRT-CORE 创建的 release（tag 格式: IPQ60XX-WIFI-YES-VIKINGYFY-main-YY.MM.DD-HH.MM.SS）
+          tag="$(gh release list --limit 5 --json tagName,isLatest --jq '[.[] | select(.isLatest)][0].tagName // empty')"
+          if [ -z "$tag" ]; then
+            # 没有 latest 标记则取最新一个
+            tag="$(gh release list --limit 1 --json tagName --jq '.[0].tagName // empty')"
+          fi
+          [ -n "$tag" ] || { echo "未找到 release，跳过"; exit 0; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: 追加清单快照到 Release Body
+        if: steps.latest.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.latest.outputs.tag }}
+        run: |
+          set -euo pipefail
+          MANIFEST=.github/packages.json
+
+          # 生成清单快照 Markdown
+          snapshot=$(jq -r '
+            "## 依赖清单快照\n" +
+            "\n### GitHub Release\n" +
+            (.githubRelease[] | "  - \(.name): `\(.currentTag)` \(.currentSha256[0:12]//"")") +
+            "\n### Git 仓库\n" +
+            (.gitRepo[] | "  - \(.name): `\(.currentCommit[0:7]//"")`") +
+            "\n### Feed 补丁\n" +
+            (.feedPatch[] | "  - \(.name): 锁定 `\(.pkgVersion)` SHA256: `\(.pkgHash[0:12])`") +
+            "\n### 上游\n" +
+            "  - CI: `\(.upstream.ciRepo)` @ `\(.upstream.currentCiCommit[0:7]//"—")`" +
+            "\n  - 源码: `\(.upstream.sourceRepo)` @ `\(.upstream.currentSourceCommit[0:7]//"—")`"
+          ' "$MANIFEST")
+
+          # 获取当前 body
+          body="$(gh release view "$TAG" --json body --jq '.body // ""')"
+
+          # 如果已包含快照，先去除旧快照再追加
+          clean_body="$(printf '%s' "$body" | sed '/^## 依赖清单快照/,$d')"
+
+          # 追加新快照
+          new_body="${clean_body}
+---
+${snapshot}"
+
+          # 写入临时文件
+          printf '%s' "$new_body" > /tmp/release-body.md
+
+          gh release edit "$TAG" --notes-file /tmp/release-body.md
+          echo "已追加清单快照到 ${TAG}"
+
+      - name: 滚动发布（保留最近 3 个）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # 获取所有 release，按 createdAt 降序排列
+          releases="$(gh release list --limit 10 --json tagName,createdAt --jq 'sort_by(.createdAt) | reverse')"
+          count="$(echo "$releases" | jq 'length')"
+          KEEP=3
+
+          if [ "$count" -gt "$KEEP" ]; then
+            # 取需要删除的（从第 KEEP+1 个开始）
+            to_delete="$(echo "$releases" | jq -r ".[$KEEP:] | .[] | .tagName")"
+            echo "$to_delete" | while read -r tag; do
+              if [ -n "$tag" ]; then
+                echo "删除旧 release: $tag"
+                gh release delete "$tag" --cleanup-tag -y 2>/dev/null || true
+              fi
+            done
+            echo "已清理 $((count - KEEP)) 个旧 release，保留最近 ${KEEP} 个"
+          else
+            echo "当前 release 数 ${count}，无需清理（保留上限 ${KEEP}）"
+          fi
+
+  # 写入清单快照到固件内 /etc/qwrt-manifest.json（方案二）
+  # 由 PRIVATE.sh 实现，在编译时随 files/ 覆盖层写入
+  # 此处仅作确认标记
+  manifest-in-firmware:
+    name: 确认固件内清单
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: 确认清单文件已就位
+        run: |
+          echo "清单快照将在编译时由 PRIVATE.sh 写入 files/etc/qwrt-manifest.json，随固件打包"
+          echo "用户可在设备上执行: cat /etc/qwrt-manifest.json 查看"

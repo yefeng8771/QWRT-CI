@@ -1,0 +1,246 @@
+# 每周检查外部依赖（stundeck / sing-box / natmapt / syncthing）与上游源码的更新，
+# 有变化则回写 .github/packages.json 并直接提交，随后由 Weekly-Build.yml 消费。
+#
+# 依赖清单见 .github/packages.json，新增/调整依赖只改清单、无需动本文件。
+# 单个上游不可用时仅 ::warning:: 跳过，不阻断整批检查。
+name: 每周跟踪依赖更新
+
+on:
+  schedule:
+    - cron: '0 18 * * 5'   # 每周六 02:00 北京时间（= 周五 18:00 UTC）
+  workflow_dispatch:
+    inputs:
+      DRY_RUN:
+        description: '只出报告，不回写清单、不提交'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: track-packages
+  cancel-in-progress: false
+
+jobs:
+  track:
+    name: 检查并回写依赖清单
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      MANIFEST: .github/packages.json
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 配置 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 初始化更新报告
+        run: |
+          set -euo pipefail
+          report_dir="$RUNNER_TEMP/qwrt-report"
+          rm -rf "$report_dir" && mkdir -p "$report_dir"
+          echo "REPORT_DIR=$report_dir" >> "$GITHUB_ENV"
+
+      - name: 检查 GitHub Release 类依赖
+        run: |
+          set -euo pipefail
+          count="$(jq '.githubRelease | length' "$MANIFEST")"
+          for i in $(seq 0 $((count - 1))); do
+            name="$(jq -r ".githubRelease[$i].name" "$MANIFEST")"
+            repo="$(jq -r ".githubRelease[$i].repo" "$MANIFEST")"
+            suffix="$(jq -r ".githubRelease[$i].assetSuffix" "$MANIFEST")"
+            pre="$(jq -r ".githubRelease[$i].prerelease" "$MANIFEST")"
+            cur_tag="$(jq -r ".githubRelease[$i].currentTag // \"\"" "$MANIFEST")"
+            src_repo="$(jq -r ".githubRelease[$i].sourceRepo // \"\"" "$MANIFEST")"
+
+            # 单源故障不阻断整批
+            rel="$(gh api "repos/${repo}/releases?per_page=30" 2>/dev/null || echo '[]')"
+            latest="$(jq -c --argjson pre "$pre" --arg sfx "$suffix" '
+              [ .[]? | select(.draft == false and .prerelease == $pre)
+                      | select([.assets[]? | select(.name | endswith($sfx))] | length > 0) ][0] // empty
+            ' <<< "$rel")"
+
+            if [ -z "$latest" ]; then
+              echo "::warning::${name}: 未找到匹配 ${suffix} 的发布，跳过"
+              jq -n --arg name "$name" '{name: $name, status: "unavailable"}' \
+                > "$REPORT_DIR/rel-${name}.json"
+              continue
+            fi
+
+            new_tag="$(jq -r '.tag_name' <<< "$latest")"
+            # GitHub 资产 API 已直接提供 digest，无需下载 8.6MB 自行计算
+            new_sha="$(jq -r --arg sfx "$suffix" '
+              [.assets[] | select(.name | endswith($sfx))][0].digest // "" | sub("^sha256:"; "")
+            ' <<< "$latest")"
+
+            # 构建层（fork 交叉编译）落后于源仓库时在报告中提示
+            src_tag=""
+            if [ -n "$src_repo" ]; then
+              src_tag="$(gh api "repos/${src_repo}/releases/latest" --jq '.tag_name' 2>/dev/null || echo "")"
+            fi
+
+            status=unchanged
+            if [ "$new_tag" != "$cur_tag" ]; then
+              status=updated
+              jq --argjson i "$i" --arg t "$new_tag" --arg s "$new_sha" --arg st "$src_tag" '
+                .githubRelease[$i].currentTag = $t
+                | .githubRelease[$i].currentSha256 = $s
+                | if $st != "" then .githubRelease[$i].currentSourceTag = $st else . end
+              ' "$MANIFEST" > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"
+            fi
+
+            jq -n --arg name "$name" --arg status "$status" --arg from "$cur_tag" \
+                  --arg to "$new_tag" --arg src "$src_tag" --arg repo "$repo" \
+              '{name: $name, status: $status, from: $from, to: $to, sourceTag: $src, repo: $repo}' \
+              > "$REPORT_DIR/rel-${name}.json"
+          done
+
+      - name: 校验 sing-box 产物
+        run: |
+          set -euo pipefail
+          tag="$(jq -r '.githubRelease[] | select(.name == "sing-box") | .currentTag' "$MANIFEST")"
+          [ -n "$tag" ] || { echo "::warning::sing-box 无版本记录，跳过校验"; exit 0; }
+
+          work="$RUNNER_TEMP/singbox" && mkdir -p "$work"
+          gh release download "$tag" --repo reF1nd/sing-box-releases \
+            --pattern '*-linux-arm64-musl.tar.gz' --dir "$work" --clobber
+          tar -xzf "$work"/*.tar.gz -C "$work" --strip-components=1
+
+          bin="$(find "$work" -type f -name 'sing-box' | head -n 1)"
+          test -s "$bin"
+
+          # 架构错了刷进固件直接跑不起来
+          file "$bin" | grep -q 'ARM aarch64' \
+            || { echo "::error::sing-box 架构不是 ARM aarch64"; exit 1; }
+
+          # build tag 写错不会报错，只会静默少功能，必须从二进制反查
+          for t in $(jq -r '.githubRelease[] | select(.name=="sing-box") | .requiredBuildTags[]?' "$MANIFEST"); do
+            go version -m "$bin" | grep -q "$t" \
+              || { echo "::error::sing-box 缺少 build tag: $t"; exit 1; }
+            echo "已确认 build tag: $t"
+          done
+
+          jq -n --arg tag "$tag" --arg arch "ARM aarch64" \
+            '{name: "sing-box", tag: $tag, arch: $arch}' \
+            > "$REPORT_DIR/verify-singbox.json"
+
+      - name: 检查 Git 仓库类依赖
+        run: |
+          set -euo pipefail
+          count="$(jq '.gitRepo | length' "$MANIFEST")"
+          for i in $(seq 0 $((count - 1))); do
+            name="$(jq -r ".gitRepo[$i].name" "$MANIFEST")"
+            repo="$(jq -r ".gitRepo[$i].repo" "$MANIFEST")"
+            ref="$(jq -r ".gitRepo[$i].ref" "$MANIFEST")"
+            cur="$(jq -r ".gitRepo[$i].currentCommit // \"\"" "$MANIFEST")"
+
+            new="$(gh api "repos/${repo}/commits/${ref}" --jq '.sha' 2>/dev/null || echo "")"
+            if [ -z "$new" ]; then
+              echo "::warning::${name}: 无法获取 ${ref} 的 commit，跳过"
+              jq -n --arg name "$name" '{name: $name, status: "unavailable"}' \
+                > "$REPORT_DIR/git-${name}.json"
+              continue
+            fi
+
+            ahead=0
+            status=unchanged
+            if [ -z "$cur" ]; then
+              status=initialized
+            elif [ "$cur" != "$new" ]; then
+              status=updated
+              ahead="$(gh api "repos/${repo}/compare/${cur}...${new}" --jq '.ahead_by' 2>/dev/null || echo 0)"
+            fi
+            if [ "$status" != "unchanged" ]; then
+              jq --argjson i "$i" --arg c "$new" '.gitRepo[$i].currentCommit = $c' \
+                "$MANIFEST" > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"
+            fi
+
+            jq -n --arg name "$name" --arg status "$status" --arg from "$cur" \
+                  --arg to "$new" --argjson ahead "$ahead" --arg repo "$repo" \
+              '{name: $name, status: $status, from: $from, to: $to, ahead: $ahead, repo: $repo}' \
+              > "$REPORT_DIR/git-${name}.json"
+          done
+
+      - name: 检查 feed 补丁是否可退役
+        run: |
+          set -euo pipefail
+          # PRIVATE.sh [5] 的 syncthing sed 是死 pin，feed 追上后必须移除，
+          # 否则会静默把 feed 里的新版本降级回 rc，且硬编码 PKG_HASH 会失效。
+          count="$(jq '.feedPatch | length' "$MANIFEST")"
+          for i in $(seq 0 $((count - 1))); do
+            name="$(jq -r ".feedPatch[$i].name" "$MANIFEST")"
+            up="$(jq -r ".feedPatch[$i].upstreamRepo" "$MANIFEST")"
+            pinned="$(jq -r ".feedPatch[$i].sourceVersion" "$MANIFEST")"
+            abandon="$(jq -r ".feedPatch[$i].abandonWhenFeedReaches" "$MANIFEST")"
+
+            latest="$(gh api "repos/${up}/releases/latest" --jq '.tag_name' 2>/dev/null || echo "")"
+            jq -n --arg name "$name" --arg pinned "$pinned" \
+                  --arg latest "${latest#v}" --arg abandon "$abandon" \
+              '{name: $name, pinned: $pinned, upstreamLatest: $latest, abandonWhen: $abandon}' \
+              > "$REPORT_DIR/patch-${name}.json"
+          done
+
+      - name: 检查上游源码提交量
+        run: |
+          set -euo pipefail
+          for key in ci source; do
+            repo="$(jq -r ".upstream.${key}Repo" "$MANIFEST")"
+            branch="$(jq -r ".upstream.${key}Branch" "$MANIFEST")"
+            case "$key" in
+              ci)     field=currentCiCommit ;;
+              source) field=currentSourceCommit ;;
+            esac
+            cur="$(jq -r ".upstream.${field} // \"\"" "$MANIFEST")"
+
+            new="$(gh api "repos/${repo}/commits/${branch}" --jq '.sha' 2>/dev/null || echo "")"
+            [ -n "$new" ] || { echo "::warning::${repo}: 无法获取 commit"; continue; }
+
+            ahead=0
+            if [ -n "$cur" ] && [ "$cur" != "$new" ]; then
+              ahead="$(gh api "repos/${repo}/compare/${cur}...${new}" --jq '.ahead_by' 2>/dev/null || echo 0)"
+            fi
+            jq --arg f "$field" --arg c "$new" '.upstream[$f] = $c' \
+              "$MANIFEST" > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"
+
+            jq -n --arg repo "$repo" --arg from "$cur" --arg to "$new" --argjson ahead "$ahead" \
+              '{repo: $repo, from: $from, to: $to, ahead: $ahead}' \
+              > "$REPORT_DIR/upstream-${key}.json"
+          done
+
+      - name: 渲染周报
+        id: report
+        run: |
+          set -euo pipefail
+          node .github/scripts/render-report.mjs "$REPORT_DIR" "$RUNNER_TEMP/report.md" \
+            >> "$GITHUB_OUTPUT"
+          echo "body_path=$RUNNER_TEMP/report.md" >> "$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/report.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 提交清单变更
+        if: ${{ inputs.DRY_RUN != true }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$MANIFEST"
+          if git diff --cached --quiet; then
+            echo "依赖无变化，清单未改动"
+          else
+            git commit -m "chore(deps): ${{ steps.report.outputs.title }}"
+            git push
+          fi
+
+      - name: 上传周报
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-report
+          path: ${{ steps.report.outputs.body_path }}
+          if-no-files-found: error
+          retention-days: 30

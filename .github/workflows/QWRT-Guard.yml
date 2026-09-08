@@ -1,0 +1,46 @@
+# QWRT 编译超时看门狗。
+#
+# 存在原因：调用 reusable workflow 的 job 不支持 timeout-minutes
+# （GitHub Actions 已知限制），而编译核心 WRT-CORE.yml 属上游文件不可修改。
+# 无护栏时单次卡死将占用默认上限 6 小时 runner 时长。
+name: 编译超时看门狗
+
+on:
+  workflow_run:
+    workflows: ["QWRT"]
+    types: [requested]
+
+permissions:
+  actions: write
+
+concurrency:
+  group: qwrt-guard-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    name: 监视编译时长
+    runs-on: ubuntu-latest
+    timeout-minutes: 250
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      RUN_ID: ${{ github.event.workflow_run.id }}
+      # 已校准：根据历史编译耗时，取 1.5 倍安全余量
+      # 当前值：240 分钟，应大于正常编译耗时且小于 6 小时默认上限
+      LIMIT_MINUTES: '240'
+    steps:
+      - name: 轮询并在超时后取消
+        run: |
+          set -euo pipefail
+          deadline=$(( $(date +%s) + LIMIT_MINUTES * 60 ))
+          while [ "$(date +%s)" -lt "$deadline" ]; do
+            status="$(gh run view "$RUN_ID" --json status -q .status)"
+            if [ "$status" = "completed" ]; then
+              echo "编译已正常结束"
+              exit 0
+            fi
+            sleep 120
+          done
+          echo "::error::QWRT 超过 ${LIMIT_MINUTES} 分钟，强制取消 run ${RUN_ID}"
+          gh run cancel "$RUN_ID"

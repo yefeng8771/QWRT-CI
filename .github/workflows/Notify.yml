@@ -1,0 +1,56 @@
+# 统一监听三条主线的执行结果并推送通知。
+# 用 workflow_run 而非在各 workflow 内嵌通知步骤：上游文件不可修改，
+# 且集中一处便于统一渠道与格式。
+name: 执行结果通知
+
+on:
+  workflow_run:
+    workflows: ["每日同步上游", "每周跟踪依赖更新", "每周编译固件"]
+    types: [completed]
+
+permissions:
+  actions: read
+
+jobs:
+  notify:
+    name: 推送执行结果
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 组装消息
+        id: msg
+        env:
+          NAME: ${{ github.event.workflow_run.name }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -euo pipefail
+          if [ "$CONCLUSION" = "success" ]; then
+            echo "text=✅ ${NAME} 执行成功" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::${NAME} 执行失败（${CONCLUSION}）：${URL}"
+            echo "text=❌ ${NAME} 执行失败（${CONCLUSION}）" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 推送 Telegram 通知
+        if: always()
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          TEXT: ${{ steps.msg.outputs.text }}
+        run: |
+          set -euo pipefail
+          # 仅在 secret 就绪时发送通知
+          if [ -z "${TG_BOT_TOKEN:-}" ] || [ -z "${TG_CHAT_ID:-}" ]; then
+            echo "TG_BOT_TOKEN 或 TG_CHAT_ID 未配置，跳过通知推送"
+            echo "待配置后通知内容将发送到 Telegram"
+            # 输出到 step summary 以便在 Actions 页面查看
+            echo "$TEXT" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          curl -fsSL -o /dev/null \
+            "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TG_CHAT_ID}" \
+            -d "text=${TEXT}" \
+            -d "disable_web_page_preview=true" \
+            -d "parse_mode=HTML"

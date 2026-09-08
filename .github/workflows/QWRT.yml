@@ -3,12 +3,21 @@
 #   - 静态指定品牌参数 (QWRT / 172.16.3.1)
 #   - fork 上游 VIKINGYFY/OpenWRT-CI 不改 WRT-CORE.yml;
 #     自定义经 Scripts/PRIVATE.sh (被 Packages.sh source) + Config/PRIVATE.txt 注入
-#   - Auto-Sync.yml 同步上游成功后主动触发本流
+#   - 被 Weekly-Build.yml 通过 workflow_call 调用
 #   - 不依赖 brand.sh 运行时改 yml, 上游同步即便覆盖 QCA workflow 也不影响本产物
 name: QWRT
 
 on:
-  # Auto-Sync 同步成功后会主动触发本流 (gh workflow run QWRT.yml -f TEST=false)
+  workflow_call:
+    inputs:
+      PACKAGE:
+        required: false
+        type: string
+        default: ''
+      TEST:
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       PACKAGE:
@@ -26,6 +35,11 @@ on:
 permissions:
   contents: write
   actions: write  # WRT-CORE Update Caches 步 gh cache delete 需 actions:write, 否则 HTTP 403
+
+# 编译不可中途取消，重复触发排队而非并行（避免同时写同一缓存 key）
+concurrency:
+  group: qwrt-build
+  cancel-in-progress: false
 
 jobs:
   QWRT:
