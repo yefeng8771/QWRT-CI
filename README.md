@@ -1,10 +1,10 @@
 # QWRT-CI — 京东云亚瑟专用云编译
 
-本仓库是 [VIKINGYFY/OpenWRT-CI](https://github.com/VIKINGYFY/OpenWRT-CI) 的 **additive fork**，专为 **jdcloud_re-cs-02 (京东云亚瑟 / IPQ60XX)** 定制编译 OpenWRT 固件。
+[IPQ技术讨论群](https://qm.qq.com/q/v7nMhzB4oU)
 
 ---
 
-## ⚠️ 硬约束（违反会破坏仓库）
+[LiBwrt-Ai](https://api.zipimg.cn/register?aff=LR7FSZ2ZZ4D3)
 
 1. **禁止修改任何上游文件**（文件头带 `# SPDX-License-Identifier: MIT` + `# Copyright (C) 2026 VIKINGYFY`）。  
    所有自定义必须走新增文件 + 上游原生钩子：
