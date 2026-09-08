@@ -66,9 +66,9 @@ STUNDECK_BIN_DIR="${GW}/stundeck-prebuilt"
 rm -rf "$STUNDECK_BIN_DIR"
 mkdir -p "$STUNDECK_BIN_DIR"
 
-# 用 gh 下载或 curl 拼固定 URL
-# GitHub release download URL: https://github.com/{owner}/{repo}/releases/download/{tag}/{asset}
-STUNDECK_ASSET="stundeck-linux-arm64.tar.gz"
+# 构建资产: stundeck-{version}-linux-arm64.tar.gz（tag 去 v 前缀拼接）
+STUNDECK_VERSION="${STUNDECK_TAG#v}"
+STUNDECK_ASSET="stundeck-${STUNDECK_VERSION}-linux-arm64.tar.gz"
 STUNDECK_DL_URL="https://github.com/${STUNDECK_REPO}/releases/download/${STUNDECK_TAG}/${STUNDECK_ASSET}"
 echo "[qwrt]   downloading: ${STUNDECK_DL_URL}"
 curl -fsSL "${GH_HEADERS[@]}" "$STUNDECK_DL_URL" -o "$STUNDECK_BIN_DIR/stundeck.tar.gz"
@@ -230,8 +230,7 @@ if [ -d "$WRT_FILES" ]; then
     jq '{
         upstream: {ciRepo: .upstream.ciRepo, sourceRepo: .upstream.sourceRepo, ciCommit: .upstream.currentCiCommit, sourceCommit: .upstream.currentSourceCommit},
         githubRelease: [.githubRelease[] | {name, repo, currentTag, currentSha256, sourceRepo, currentSourceTag}],
-        gitRepo: [.gitRepo[] | {name, repo, currentCommit}],
-        feedPatch: [.feedPatch[] | {name, pkgVersion, sourceVersion, pkgHash}]
+        gitRepo: [.gitRepo[] | {name, repo, currentCommit}]
     }' "$MANIFEST" > "$WRT_FILES/etc/qwrt-manifest.json"
     echo "[qwrt]   manifest snapshot -> ${WRT_FILES}/etc/qwrt-manifest.json"
     echo "[qwrt]   on-device: cat /etc/qwrt-manifest.json"
