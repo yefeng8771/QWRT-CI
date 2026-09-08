@@ -36,11 +36,6 @@ permissions:
   contents: write
   actions: write  # WRT-CORE Update Caches 步 gh cache delete 需 actions:write, 否则 HTTP 403
 
-# 编译不可中途取消，重复触发排队而非并行（避免同时写同一缓存 key）
-concurrency:
-  group: qwrt-build
-  cancel-in-progress: false
-
 jobs:
   QWRT:
     uses: ./.github/workflows/WRT-CORE.yml
