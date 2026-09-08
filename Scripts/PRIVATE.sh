@@ -220,76 +220,10 @@ install -m 0755 "$SINGBOX_BIN" "$WRT_FILES/usr/bin/sing-box"
 echo "[qwrt]   sing-box -> ${WRT_FILES}/usr/bin/sing-box"
 
 
-# ============ [5] Patch syncthing feed Makefile to RC v2.1.4-rc.2 ============
-# immortalwrt feed 默认锁 stable 2.1.3; 用户要上游 rc 2.1.4-rc.2, 故 sed 强改.
-# 解耦: PKG_VERSION=2.1.4_rc2 (apk合法包版本, _rc=rc suffix), 引入 PKG_SOURCE_VERSION=2.1.4-rc.2
-#       供 PKG_SOURCE/URL/BUILD_DIR/LDFLAGS 用 (源码目录名=2.1.4-rc.2). PKG_HASH=rc tarball sha256 已校验.
-# 根因: 旧 PKG_VERSION=2.1.4-rc.2 致 apk 包版本 "2.1.4-rc.2-r1" 非法 (Error99). 时序: feeds install 后, defconfig 前.
-echo "[qwrt] [5/5] Patching syncthing feed Makefile to RC v2.1.4-rc.2..."
-
-# 从清单读取 syncthing 补丁参数
-SYNCTHING_PKG_VER="$(jq -r '.feedPatch[] | select(.name == "syncthing") | .pkgVersion' "$MANIFEST")"
-SYNCTHING_SRC_VER="$(jq -r '.feedPatch[] | select(.name == "syncthing") | .sourceVersion' "$MANIFEST")"
-SYNCTHING_PKG_HASH="$(jq -r '.feedPatch[] | select(.name == "syncthing") | .pkgHash' "$MANIFEST")"
-SYNCTHING_ABANDON="$(jq -r '.feedPatch[] | select(.name == "syncthing") | .abandonWhenFeedReaches' "$MANIFEST")"
-
-test -n "$SYNCTHING_PKG_VER" || { echo "[qwrt]   ERROR: syncthing pkgVersion empty" >&2; exit 1; }
-
-SYNCTHING_MK=""
-if [ -d "${WRT_ROOT}/feeds" ]; then
-    SYNCTHING_MK=$(find "${WRT_ROOT}/feeds" -path '*/syncthing/Makefile' -type f 2>/dev/null | head -n 1 || true)
-fi
-
-if [ -n "$SYNCTHING_MK" ]; then
-    # 前置条件: 检查 feed 当前版本是否已 ≥ abandon 阈值
-    CURRENT_FEED_VER="$(grep -oP '^PKG_VERSION:=\K.*' "$SYNCTHING_MK" 2>/dev/null || echo "")"
-    if [ -n "$CURRENT_FEED_VER" ] && [ -n "$SYNCTHING_ABANDON" ]; then
-        # 简单版本比较: 用 sed 把 _rc / -rc 归一化后按数值比较主版本
-        FEED_NORM="$(echo "$CURRENT_FEED_VER" | sed 's/_rc/./; s/-rc/./' | cut -d. -f1-2)"
-        ABANDON_NORM="$(echo "$SYNCTHING_ABANDON" | cut -d. -f1-2)"
-        # 转浮点数比较 (2.1 < 2.1.4 → yes)
-        HIGHEST=$(printf '%s\n' "$FEED_NORM" "$ABANDON_NORM" | sort -t. -k1,1n -k2,2n | tail -n1)
-        if [ "$HIGHEST" = "$FEED_NORM" ] && [ "$FEED_NORM" != "$ABANDON_NORM" ] || \
-           [ "$CURRENT_FEED_VER" = "$SYNCTHING_ABANDON" ] || \
-           [ "$(echo "$CURRENT_FEED_VER" | cut -d. -f1)" -gt "$(echo "$SYNCTHING_ABANDON" | cut -d. -f1)" ]; then
-            echo "[qwrt]   ::warning:: syncthing feed ${CURRENT_FEED_VER} ≥ abandon ${SYNCTHING_ABANDON}, skipping patch (recommend removing feedPatch)"
-        else
-            sed -i \
-                -e "s|^PKG_VERSION:=.*|PKG_VERSION:=${SYNCTHING_PKG_VER}\nPKG_SOURCE_VERSION:=${SYNCTHING_SRC_VER}|" \
-                -e 's|$(PKG_VERSION)|$(PKG_SOURCE_VERSION)|g' \
-                -e "s|^PKG_HASH:=.*|PKG_HASH:=${SYNCTHING_PKG_HASH}|" \
-                "$SYNCTHING_MK"
-            echo "[qwrt]   patched: $SYNCTHING_MK"
-            if grep -qE "^PKG_VERSION:=${SYNCTHING_PKG_VER}" "$SYNCTHING_MK"; then
-                grep -E '^(PKG_VERSION|PKG_SOURCE_VERSION|PKG_HASH):=' "$SYNCTHING_MK"
-                echo "[qwrt]   syncthing -> rc ${SYNCTHING_SRC_VER} (pkgver ${SYNCTHING_PKG_VER} apk-legal)"
-            else
-                echo "[qwrt]   ERROR: sed did not set PKG_VERSION=${SYNCTHING_PKG_VER}" >&2; exit 1
-            fi
-        fi
-    else
-        # 无版本或阈值: 直接执行 sed
-        sed -i \
-            -e "s|^PKG_VERSION:=.*|PKG_VERSION:=${SYNCTHING_PKG_VER}\nPKG_SOURCE_VERSION:=${SYNCTHING_SRC_VER}|" \
-            -e 's|$(PKG_VERSION)|$(PKG_SOURCE_VERSION)|g' \
-            -e "s|^PKG_HASH:=.*|PKG_HASH:=${SYNCTHING_PKG_HASH}|" \
-            "$SYNCTHING_MK"
-        echo "[qwrt]   patched: $SYNCTHING_MK"
-        if grep -qE "^PKG_VERSION:=${SYNCTHING_PKG_VER}" "$SYNCTHING_MK"; then
-            grep -E '^(PKG_VERSION|PKG_SOURCE_VERSION|PKG_HASH):=' "$SYNCTHING_MK"
-            echo "[qwrt]   syncthing -> rc ${SYNCTHING_SRC_VER}"
-        else
-            echo "[qwrt]   ERROR: sed did not set PKG_VERSION=${SYNCTHING_PKG_VER}" >&2; exit 1
-        fi
-    fi
-else
-    echo "[qwrt]   ERROR: syncthing Makefile not found in ${WRT_ROOT}/feeds/" >&2; exit 1
-fi
-
-# ============ [6] 写入固件清单快照 ============
+# ============ [5] 写入固件清单快照 ============
 # 将 .github/packages.json 的快照写入固件内，供用户 cat /etc/qwrt-manifest.json 查看。
 # 这是方案二（Release Body 增强），随固件打包，信息随设备走。
-echo "[qwrt] [6/6] Writing manifest snapshot to firmware..."
+echo "[qwrt] [5/5] Writing manifest snapshot to firmware..."
 if [ -d "$WRT_FILES" ]; then
     mkdir -p "$WRT_FILES/etc"
     # 生成精简版清单快照（去冗余字段，保留关键版本信息）
