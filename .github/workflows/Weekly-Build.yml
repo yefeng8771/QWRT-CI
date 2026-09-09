@@ -74,20 +74,22 @@ jobs:
           set -euo pipefail
           MANIFEST=.github/packages.json
 
-          # 生成清单快照 Markdown
+          # 生成清单快照 Markdown（防御空值：用 ascii "-" 避免字符编码问题）
           snapshot=$(jq -r '
+            def s: if . == null then "-" else .[0:7] end;
             "## 依赖清单快照\n" +
             "\n### GitHub Release\n" +
-            (.githubRelease[] | "  - \(.name): `\(.currentTag)` \(.currentSha256[0:12]//"")") +
+            (.githubRelease[] | "  - \(.name): `\(.currentTag)`") +
             "\n### Git 仓库\n" +
-            (.gitRepo[] | "  - \(.name): `\(.currentCommit[0:7]//"")`") +
+            (.gitRepo[] | "  - \(.name): `\(.currentCommit | s)`") +
             "\n### 上游\n" +
-            "  - CI: `\(.upstream.ciRepo)` @ `\(.upstream.currentCiCommit[0:7]//"—")`" +
-            "\n  - 源码: `\(.upstream.sourceRepo)` @ `\(.upstream.currentSourceCommit[0:7]//"—")`"
+            "  - CI: `\(.upstream.ciRepo)` @ `\(.upstream.currentCiCommit | s)`" +
+            "\n  - 源码: `\(.upstream.sourceRepo)` @ `\(.upstream.currentSourceCommit | s)`"
           ' "$MANIFEST")
+          echo "snapshot 生成成功: ${#snapshot} 字符"
 
-          # 获取当前 body
-          body="$(gh release view "$TAG" --json body --jq '.body // ""')"
+          # 获取当前 body（Release 刚创建时 API 可能延迟，容错为空）
+          body="$(gh release view "$TAG" --json body --jq '.body // ""' 2>/dev/null || echo "")"
 
           # 如果已包含快照，先去除旧快照再追加
           clean_body="$(printf '%s' "$body" | sed '/^## 依赖清单快照/,$d')"
@@ -100,7 +102,9 @@ ${snapshot}"
           # 写入临时文件
           printf '%s' "$new_body" > /tmp/release-body.md
 
-          gh release edit "$TAG" --notes-file /tmp/release-body.md
+          # 用 GITHUB_TOKEN 编辑 release body；若失败尝试重试
+          gh release edit "$TAG" --notes-file /tmp/release-body.md \
+            || { echo "首次编辑失败，3 秒后重试..."; sleep 3; gh release edit "$TAG" --notes-file /tmp/release-body.md; }
           echo "已追加清单快照到 ${TAG}"
 
       - name: 滚动发布（保留最近 3 个）
