@@ -79,9 +79,9 @@ jobs:
             def s: if . == null then "-" else .[0:7] end;
             "## 依赖清单快照\n" +
             "\n### GitHub Release\n" +
-            (.githubRelease[] | "  - \(.name): `\(.currentTag)`") +
+            ([.githubRelease[] | "  - \(.name): `\(.currentTag)`"] | join("\n")) +
             "\n### Git 仓库\n" +
-            (.gitRepo[] | "  - \(.name): `\(.currentCommit | s)`") +
+            ([.gitRepo[] | "  - \(.name): `\(.currentCommit | s)`"] | join("\n")) +
             "\n### 上游\n" +
             "  - CI: `\(.upstream.ciRepo)` @ `\(.upstream.currentCiCommit | s)`" +
             "\n  - 源码: `\(.upstream.sourceRepo)` @ `\(.upstream.currentSourceCommit | s)`"
