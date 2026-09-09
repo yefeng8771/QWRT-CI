@@ -91,18 +91,11 @@ jobs:
           # 获取当前 body（Release 刚创建时 API 可能延迟，容错为空）
           body="$(gh release view "$TAG" --json body --jq '.body // ""' 2>/dev/null || echo "")"
 
-          # 如果已包含快照，先去除旧快照再追加
-          clean_body="$(printf '%s' "$body" | sed '/^## 依赖清单快照/,$d')"
+          # 如果已包含快照，先去除旧快照再追加（用文件操作避免 shell 展开反引号）
+          echo "$body" | sed '/^## 依赖清单快照/,$d' > /tmp/release-body.md
+          echo "---" >> /tmp/release-body.md
+          echo "$snapshot" >> /tmp/release-body.md
 
-          # 追加新快照
-          new_body="${clean_body}
----
-${snapshot}"
-
-          # 写入临时文件
-          printf '%s' "$new_body" > /tmp/release-body.md
-
-          # 用 GITHUB_TOKEN 编辑 release body；若失败尝试重试
           gh release edit "$TAG" --notes-file /tmp/release-body.md \
             || { echo "首次编辑失败，3 秒后重试..."; sleep 3; gh release edit "$TAG" --notes-file /tmp/release-body.md; }
           echo "已追加清单快照到 ${TAG}"
