@@ -87,7 +87,7 @@ jobs:
           # 用仓库级 disable 而非删文件，避免与上游修改产生 modify/delete 冲突，且跨同步持久。
           # Auto-Clean.yml 必须保持禁用：其 releases_keep_latest=0 + delete_tags=true
           # 会每天清空所有 release 与 tag，与周编译节奏严重冲突。
-          for wf in Auto-Clean.yml MTK-ALL.yml OWRT-ALL.yml QCA-ALL.yml WRT-TEST.yml Cache-Clean.yml; do
+          for wf in Auto-Clean.yml MTK-ALL.yml OWRT-ALL.yml QCA-ALL.yml QCB-ALL.yml WRT-TEST.yml Cache-Clean.yml; do
             state="$(gh workflow view "$wf" --json state -q .state 2>/dev/null || echo missing)"
             case "$state" in
               missing)

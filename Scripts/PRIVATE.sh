@@ -9,7 +9,9 @@
 #   [2] clone muink natmapt + luci-app-natmapt (immortalwrt feeds 无 natmapt, 必须自带)
 #   [3] 合并 files/ 覆盖层到 wrt/files/ (sing-box init/config + uci-defaults)
 #   [4] 下载注入 reF1nd sing-box (linux-arm64-musl, with_ebpf) 到 wrt/files/usr/bin/
-#   [5] sed 改 feeds/syncthing Makefile 指向上游 rc v2.1.4-rc.2 (feed 默认锁 stable 2.1.3, sha256 已校验)
+#   [5] syncthing feed 补丁: 按用户策略锁定最新预览版 rc (版本+sha256 从 packages.json
+#       feedPatch 条目读取, 由 Track-Packages 每周自动更新; feed 版本已追平时自动休眠)
+#   [6] 写入固件清单快照 /etc/qwrt-manifest.json
 #
 # 时序: 本步在 .config 生成之前 → 不能读 .config 探测架构, 故硬编码 aarch64
 #        (jdcloud_re-cs-02 = IPQ60XX = ARMv8/aarch64)
@@ -35,7 +37,7 @@ fi
 test -f "$MANIFEST" || { echo "[qwrt]   ERROR: $MANIFEST not found" >&2; exit 1; }
 
 # ============ [1] StunDeck opkg 包 + release 裸二进制 ============
-echo "[qwrt] [1/4] Injecting stundeck opkg package + pulling release binaries..."
+echo "[qwrt] [1/6] Injecting stundeck opkg package + pulling release binaries..."
 
 # [1a] opkg 包源 (init/config/Makefile + DEPENDS natmapt) 来自本仓
 if [ -d "$GW/package/stundeck" ]; then
@@ -96,7 +98,7 @@ echo "[qwrt]   stundeck-build.mk -> ${WRT_ROOT}/stundeck-build.mk (BIN_DIR=${STU
 
 
 # ============ [2] NATMapt + LuCI (muink, feeds 无) ============
-echo "[qwrt] [2/4] Cloning muink natmapt + luci-app-natmapt..."
+echo "[qwrt] [2/6] Cloning muink natmapt + luci-app-natmapt..."
 # muink/openwrt-natmapt: 包名 natmapt, 但安装二进制名为 natmap
 #   (Makefile: INSTALL_BIN $(PKG_BUILD_DIR)/bin/natmap -> /usr/bin/)
 #   与 stundeck DEPENDS:+natmapt 及 init STUNDECK_NATMAP_BINARY=/usr/bin/natmap 完全一致, 无需 sed。
@@ -145,7 +147,7 @@ fi
 
 
 # ============ [3] files/ 覆盖层 ============
-echo "[qwrt] [3/4] Merging files/ overlay into wrt/files/..."
+echo "[qwrt] [3/6] Merging files/ overlay into wrt/files/..."
 if [ -d "$GW/files" ]; then
     mkdir -p "$WRT_FILES"
     cp -a "$GW/files/." "$WRT_FILES/"
@@ -156,7 +158,7 @@ fi
 
 
 # ============ [4] sing-box (reF1nd prerelease, with_ebpf) ============
-echo "[qwrt] [4/4] Downloading & injecting reF1nd sing-box..."
+echo "[qwrt] [4/6] Downloading & injecting reF1nd sing-box..."
 RELEASE_ARCH="arm64"     # jdcloud_re-cs-02 = aarch64 (硬编码, .config 尚未生成)
 
 SINGBOX_TAG="$(jq -r '.githubRelease[] | select(.name == "sing-box") | .currentTag' "$MANIFEST")"
@@ -220,17 +222,51 @@ install -m 0755 "$SINGBOX_BIN" "$WRT_FILES/usr/bin/sing-box"
 echo "[qwrt]   sing-box -> ${WRT_FILES}/usr/bin/sing-box"
 
 
-# ============ [5] 写入固件清单快照 ============
+# ============ [5] syncthing feed 补丁: 锁定最新预览版 ============
+# 用户策略: syncthing 版本总是最新预览版(rc)。feed(immortalwrt/packages) 默认只跟 stable,
+# 故在 feeds 更新后把 utils/syncthing/Makefile 的 PKG_VERSION/PKG_HASH sed 为清单锁定的
+# 预览版。版本与 sha256 由 Track-Packages 每周自动写回 packages.json 的 feedPatch 条目。
+# feed 版本追平/超过锁定版本时跳过 (dpkg 比较, -rc. 转 ~rc. 保证 2.1.4-rc.2 < 2.1.4 语义),
+# 补丁自动休眠, 待更新的预览版发布后自动恢复。
+echo "[qwrt] [5/6] Patching feeds syncthing to pinned prerelease..."
+
+ST_FEED_MF="$(find "${WRT_ROOT}/feeds" -type f -wholename '*/syncthing/Makefile' -print -quit 2>/dev/null)"
+ST_PINNED="$(jq -r '.feedPatch[]? | select(.name == "syncthing") | .sourceVersion // empty' "$MANIFEST" | head -n1)"
+ST_SHA256="$(jq -r '.feedPatch[]? | select(.name == "syncthing") | .sourceSha256 // empty' "$MANIFEST" | head -n1)"
+
+if [ -z "$ST_PINNED" ] || [ -z "$ST_SHA256" ]; then
+    echo "[qwrt]   no syncthing feedPatch in $MANIFEST, skip (build feed default version)"
+elif [ ! -f "$ST_FEED_MF" ]; then
+    echo "[qwrt]   WARNING: syncthing Makefile not found in feeds, skip"
+else
+    ST_VERSION="${ST_PINNED#v}"
+    # dpkg 语义比较: 2.1.4-rc.2 -> 2.1.4~rc.2, 确保 rc 排序在正式版之前
+    ST_VERSION_CMP="${ST_VERSION//-rc./~rc.}"
+    FEED_VERSION="$(grep -oP '^PKG_VERSION:=\K.*' "$ST_FEED_MF" | head -n1 || true)"
+    if [ -z "$FEED_VERSION" ]; then
+        echo "[qwrt]   WARNING: cannot read feed PKG_VERSION, patch skipped"
+    elif dpkg --compare-versions "$FEED_VERSION" lt "$ST_VERSION_CMP"; then
+        sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=${ST_VERSION}/" "$ST_FEED_MF"
+        sed -i "s/^PKG_HASH:=.*/PKG_HASH:=${ST_SHA256}/" "$ST_FEED_MF"
+        echo "[qwrt]   syncthing patched: ${FEED_VERSION} -> ${ST_VERSION}"
+    else
+        echo "[qwrt]   syncthing patch dormant: feed ${FEED_VERSION} >= pinned ${ST_VERSION}"
+    fi
+fi
+
+
+# ============ [6] 写入固件清单快照 ============
 # 将 .github/packages.json 的快照写入固件内，供用户 cat /etc/qwrt-manifest.json 查看。
 # 这是方案二（Release Body 增强），随固件打包，信息随设备走。
-echo "[qwrt] [5/5] Writing manifest snapshot to firmware..."
+echo "[qwrt] [6/6] Writing manifest snapshot to firmware..."
 if [ -d "$WRT_FILES" ]; then
     mkdir -p "$WRT_FILES/etc"
     # 生成精简版清单快照（去冗余字段，保留关键版本信息）
     jq '{
         upstream: {ciRepo: .upstream.ciRepo, sourceRepo: .upstream.sourceRepo, ciCommit: .upstream.currentCiCommit, sourceCommit: .upstream.currentSourceCommit},
         githubRelease: [.githubRelease[] | {name, repo, currentTag, currentSha256, sourceRepo, currentSourceTag}],
-        gitRepo: [.gitRepo[] | {name, repo, currentCommit}]
+        gitRepo: [.gitRepo[] | {name, repo, currentCommit}],
+        feedPatch: [.feedPatch[]? | {name, upstreamRepo, sourceVersion, sourceSha256}]
     }' "$MANIFEST" > "$WRT_FILES/etc/qwrt-manifest.json"
     echo "[qwrt]   manifest snapshot -> ${WRT_FILES}/etc/qwrt-manifest.json"
     echo "[qwrt]   on-device: cat /etc/qwrt-manifest.json"
