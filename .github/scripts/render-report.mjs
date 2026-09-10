@@ -19,8 +19,9 @@ const short = (sha) => (sha ? sha.slice(0, 7) : '—')
 //   - 一方先耗尽时，剩余段若含非数字则视为预发布（小于稳定版），否则视为更详细（大于简化版）
 //   例如：2.1.4_rc2 < 2.1.4 < 2.1.4.1
 export function compareVer(a, b) {
-  const pa = String(a).split(/[.\-+_]/)
-  const pb = String(b).split(/[.\-+_]/)
+  // 统一剥离 tag 的 v 前缀: v2.1.4-rc.2 与 2.1.5 需可比
+  const pa = String(a).replace(/^v/, '').split(/[.\-+_]/)
+  const pb = String(b).replace(/^v/, '').split(/[.\-+_]/)
   const maxLen = Math.max(pa.length, pb.length)
   for (let i = 0; i < maxLen; i++) {
     const sa = pa[i]
@@ -82,13 +83,19 @@ export function renderReport(items, today = new Date().toISOString().slice(0, 10
   }
 
   for (const i of byKind('patch')) {
-    const reached = i.upstreamLatest && i.abandonWhen &&
-      compareVer(i.upstreamLatest, i.abandonWhen) >= 0
-    if (reached) {
-      warnings.push(`${i.name}：上游已发布 \`${i.upstreamLatest}\`，` +
-        `PRIVATE.sh 中锁定 \`${i.pinned}\` 的 sed 补丁建议移除，否则会静默降级`)
+    if (i.status === 'unavailable') {
+      warnings.push(`${i.name}：上游发布不可用，本周未更新`)
+      continue
+    }
+    // feed 自带版本已追平/超过锁定版本 → 补丁自动休眠（不删除条目，待新预览版恢复）
+    const covered = i.feedVersion && i.to &&
+      compareVer(i.feedVersion, i.to) >= 0
+    if (covered) {
+      unchanged.push(`${i.name}：feed \`${i.feedVersion}\` 已覆盖锁定 \`${i.to}\`，补丁本周不生效`)
+    } else if (i.status === 'updated') {
+      updated.push(`**${i.name}**：\`${i.from || '—'}\` → \`${i.to}\``)
     } else {
-      unchanged.push(`${i.name} 补丁仍有效（锁定 \`${i.pinned}\`）`)
+      unchanged.push(`${i.name} 锁定 \`${i.to}\`（feed \`${i.feedVersion || '—'}\`）`)
     }
   }
 

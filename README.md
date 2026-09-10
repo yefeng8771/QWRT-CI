@@ -38,6 +38,7 @@
 | **上游（不可改）** | `.github/workflows/MTK-ALL.yml` | 上游多机型编译（已禁用） |
 | **上游（不可改）** | `.github/workflows/OWRT-ALL.yml` | 上游多机型编译（已禁用） |
 | **上游（不可改）** | `.github/workflows/QCA-ALL.yml` | 上游多机型编译（已禁用） |
+| **上游（不可改）** | `.github/workflows/QCB-ALL.yml` | 上游多机型编译（已禁用） |
 | **上游（不可改）** | `.github/workflows/WRT-TEST.yml` | 上游测试编译（已禁用） |
 | **上游（不可改）** | `.github/workflows/Auto-Clean.yml` | 上游自动清理（**已禁用**，请勿启用） |
 | **上游（不可改）** | `.github/workflows/Cache-Clean.yml` | 上游缓存清理（已禁用） |
@@ -76,7 +77,7 @@
 | **sing-box** | GitHub Release | `reF1nd/sing-box-releases`（prerelease，带 `with_ebpf`） |
 | **natmapt** | Git 仓库 | `muink/openwrt-natmapt` |
 | **luci-app-natmapt** | Git 仓库 | `muink/luci-app-natmapt` |
-| **syncthing** | Feed 补丁 | 锁定 `2.1.4_rc2`（immortalwrt feed 默认 2.1.3） |
+| **syncthing** | Feed 补丁 | 自动锁定最新预览版 rc（Track-Packages 每周更新版本+sha256；feed 版本追上时补丁自动休眠） |
 
 新增依赖只改 `packages.json`，无需动 `PRIVATE.sh` 或 workflow yml。
 
@@ -120,7 +121,7 @@ gh workflow run 每日同步上游
 - **aarch64 硬编码**（`.config` 生成前无法读取架构）
 - **版本解析与编译解耦**：所有外部依赖版本在 `packages.json` 中锁定，`PRIVATE.sh` 纯函数式读取
 - **滚动发布**：保留最近 3 个 Release，自动删除旧版本
-- **编译超时看门狗**：240 分钟自动取消（绕过 reusable workflow 不支持 `timeout-minutes` 的限制）
+- **编译超时看门狗**：240 分钟自动取消（绕过 reusable workflow 不支持 `timeout-minutes` 的限制）。同时监听 `QWRT` 与 `每周编译固件` 两条入口：`workflow_call` 内嵌调用不产生独立 run，若只监听 `QWRT` 将永远捕获不到周编译路径
 
 ---
 
@@ -146,15 +147,16 @@ gh workflow run 每日同步上游
 ### 有更新
 - **sing-box**：`v1.15.0-beta.14` → `v1.15.0-beta.16`
 - **natmapt**：`a1b2c3d` → `e4f5g6h`（7 个提交）
+- **syncthing**：`v2.1.4-rc.1` → `v2.1.4-rc.2`
 
 ### 产物校验
 - sing-box `v1.15.0-beta.16`：架构 ARM aarch64，build tag 已验证
 
 ### 无变化
-- stundeck `v0.1.202609021106`、luci-app-natmapt `f7g8h9i`、syncthing 补丁仍有效
+- stundeck `v0.1.202609021106`、luci-app-natmapt `f7g8h9i`
 
 ### ⚠️ 需人工介入
-- syncthing：上游已发布 `2.1.5`，PRIVATE.sh 中锁定 `2.1.4-rc.2` 的 sed 补丁建议移除
+- stundeck：构建层 `v0.1.202609021106` 落后于源仓库 `v0.1.1`，请确认交叉编译是否已跟进
 ```
 
 ---
@@ -163,6 +165,9 @@ gh workflow run 每日同步上游
 
 **Q: Auto-Clean.yml 为什么被禁用？**  
 A: 它配置了 `releases_keep_latest: 0` + `delete_tags: true`，每天会清空所有 Release 和 Tag。在周编译节奏下，必须永久禁用。
+
+**Q: syncthing 为什么用预览版（rc）？**  
+A: 用户策略为「syncthing 版本总是最新预览版」。Track-Packages 每周把最新 rc 的 tag 与源码包 sha256 写回 `packages.json` 的 `feedPatch` 条目，编译时由 PRIVATE.sh sed 进 feeds 的 syncthing Makefile。若 feed 自带版本已追平/超过锁定版本，补丁自动休眠（周报会提示），待更新的 rc 发布后自动恢复。想改为稳定版最新，把清单里 syncthing 的 `prerelease` 改为 `false` 即可。
 
 **Q: 如何查看固件内的依赖版本？**  
 A: 固件内已写入 `/etc/qwrt-manifest.json`，在设备上执行 `cat /etc/qwrt-manifest.json` 即可查看。

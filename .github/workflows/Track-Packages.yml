@@ -168,22 +168,62 @@ jobs:
               > "$REPORT_DIR/git-${name}.json"
           done
 
-      - name: 检查 feed 补丁是否可退役
+      - name: 检查并更新 feed 补丁依赖
         run: |
           set -euo pipefail
-          # PRIVATE.sh [5] 的 syncthing sed 是死 pin，feed 追上后必须移除，
-          # 否则会静默把 feed 里的新版本降级回 rc，且硬编码 PKG_HASH 会失效。
+          # 用户策略: syncthing 版本总是最新预览版(rc)。每周锁定最新 rc 的 tag + 源码包
+          # sha256 到 packages.json 的 feedPatch 条目，由 PRIVATE.sh 在编译时 sed 进
+          # feeds 的 syncthing Makefile。
+          # 若 feed 自带版本已追平/超过锁定版本，补丁自动休眠（周报提示），不删除条目，
+          # 待更新的预览版发布后自动恢复生效。
           count="$(jq '.feedPatch | length' "$MANIFEST")"
           for i in $(seq 0 $((count - 1))); do
             name="$(jq -r ".feedPatch[$i].name" "$MANIFEST")"
             up="$(jq -r ".feedPatch[$i].upstreamRepo" "$MANIFEST")"
-            pinned="$(jq -r ".feedPatch[$i].sourceVersion" "$MANIFEST")"
-            abandon="$(jq -r ".feedPatch[$i].abandonWhenFeedReaches" "$MANIFEST")"
+            feed_repo="$(jq -r ".feedPatch[$i].feedRepo" "$MANIFEST")"
+            feed_mf="$(jq -r ".feedPatch[$i].feedMakefile" "$MANIFEST")"
+            pre="$(jq -r ".feedPatch[$i].prerelease" "$MANIFEST")"
+            tpl="$(jq -r ".feedPatch[$i].sourceAssetTemplate" "$MANIFEST")"
+            cur_ver="$(jq -r ".feedPatch[$i].sourceVersion // \"\"" "$MANIFEST")"
 
-            latest="$(gh api "repos/${up}/releases/latest" --jq '.tag_name' 2>/dev/null || echo "")"
-            jq -n --arg name "$name" --arg pinned "$pinned" \
-                  --arg latest "${latest#v}" --arg abandon "$abandon" \
-              '{name: $name, pinned: $pinned, upstreamLatest: $latest, abandonWhen: $abandon}' \
+            rel="$(gh api "repos/${up}/releases?per_page=30" 2>/dev/null || echo '[]')"
+            latest="$(jq -c --argjson pre "$pre" \
+              '[ .[]? | select(.draft == false and ($pre == null or .prerelease == $pre)) ][0] // empty' <<< "$rel")"
+            if [ -z "$latest" ]; then
+              echo "::warning::${name}: 未找到匹配的发布，跳过"
+              jq -n --arg name "$name" '{name: $name, status: "unavailable"}' \
+                > "$REPORT_DIR/patch-${name}.json"
+              continue
+            fi
+
+            new_ver="$(jq -r '.tag_name' <<< "$latest")"
+            asset_name="${tpl//\{tag\}/$new_ver}"
+            # GitHub 资产 API 直接提供 digest，无需下载源码包自行计算
+            new_hash="$(jq -r --arg an "$asset_name" \
+              '[.assets[] | select(.name == $an)][0].digest // "" | sub("^sha256:"; "")' <<< "$latest")"
+            if [ -z "$new_hash" ]; then
+              new_hash="$(curl -fLs "https://github.com/${up}/releases/download/${new_ver}/${asset_name}" | sha256sum | cut -d' ' -f1)" \
+                || { echo "::warning::${name}: 无法获取 ${asset_name} 的 sha256，跳过"; continue; }
+            fi
+
+            # feed 当前版本: 用于判断补丁是否需要休眠
+            feed_ver=""
+            mf_b64="$(gh api "repos/${feed_repo}/contents/${feed_mf}" --jq '.content' 2>/dev/null || echo '')"
+            if [ -n "$mf_b64" ]; then
+              feed_ver="$(printf '%s' "$mf_b64" | base64 -d | grep -oP '^PKG_VERSION:=\K.*' | head -n1 || true)"
+            fi
+
+            status=unchanged
+            if [ "$new_ver" != "$cur_ver" ]; then
+              status=updated
+              jq --argjson i "$i" --arg v "$new_ver" --arg h "$new_hash" \
+                '.feedPatch[$i].sourceVersion = $v | .feedPatch[$i].sourceSha256 = $h' \
+                "$MANIFEST" > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"
+            fi
+
+            jq -n --arg name "$name" --arg status "$status" --arg from "$cur_ver" \
+                  --arg to "$new_ver" --arg fv "$feed_ver" \
+              '{name: $name, status: $status, from: $from, to: $to, feedVersion: $fv}' \
               > "$REPORT_DIR/patch-${name}.json"
           done
 

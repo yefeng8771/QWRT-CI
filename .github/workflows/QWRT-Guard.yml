@@ -3,11 +3,17 @@
 # 存在原因：调用 reusable workflow 的 job 不支持 timeout-minutes
 # （GitHub Actions 已知限制），而编译核心 WRT-CORE.yml 属上游文件不可修改。
 # 无护栏时单次卡死将占用默认上限 6 小时 runner 时长。
+#
+# ⚠️ workflow_run 只能捕获"顶层 workflow 的独立 run"：
+#   - 手动 QWRT workflow_dispatch  → 产生独立 QWRT run      → 由 "QWRT" 覆盖
+#   - 每周编译固件(Weekly-Build) 通过 workflow_call 内嵌调用 QWRT，
+#     不会产生独立 QWRT run（jobs 显示在调用方 run 内，如
+#     "构建 IPQ60XX 固件 / QWRT / VIKINGYFY/immortalwrt"）→ 必须同时监听 "每周编译固件"
 name: 编译超时看门狗
 
 on:
   workflow_run:
-    workflows: ["QWRT"]
+    workflows: ["QWRT", "每周编译固件"]
     types: [requested]
 
 permissions:
