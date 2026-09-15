@@ -29,6 +29,7 @@
 | **自有（可改）** | `.github/workflows/QWRT-Guard.yml` | 编译超时看门狗 |
 | **自有（可改）** | `.github/workflows/Notify.yml` | Telegram 通知 |
 | **自有（可改）** | `.github/packages.json` | 依赖清单（版本锁定 + 状态） |
+| **自有（可改）** | `.github/scripts/check-config.sh` | .config 片段语法校验（QWRT.yml 预检） |
 | **自有（可改）** | `Scripts/PRIVATE.sh` | 私有注入脚本（版本从清单读取） |
 | **自有（可改）** | `Config/PRIVATE.txt` | Kconfig 追加（设备精简 / 包选择） |
 | **自有（可改）** | `files/` | 固件覆盖层（uci-defaults + sing-box 配置） |
@@ -122,6 +123,7 @@ gh workflow run 每日同步上游
 - **版本解析与编译解耦**：所有外部依赖版本在 `packages.json` 中锁定，`PRIVATE.sh` 纯函数式读取
 - **滚动发布**：保留最近 3 个 Release，自动删除旧版本
 - **编译超时看门狗**：240 分钟自动取消（绕过 reusable workflow 不支持 `timeout-minutes` 的限制）。同时监听 `QWRT` 与 `每周编译固件` 两条入口：`workflow_call` 内嵌调用不产生独立 run，若只监听 `QWRT` 将永远捕获不到周编译路径
+- **配置预检**：`QWRT.yml` 在编译前用 `check-config.sh` 秒级校验 `Config/IPQ60XX-WIFI-YES.txt / GENERAL.txt / PRIVATE.txt` 的 .config 语法。WRT-CORE 会把这些片段 cat 成 `.config` 且 GNU make 直接 include 它，语法错误会让编译在 ~6 分钟后以晦涩的 `missing separator` 失败（事故：run 34721609785）。**kconfig 关闭开关必须写 `# CONFIG_X is not set`（带 #），去掉 # 既不是合法 make 语法也不是合法 kconfig 语法**
 
 ---
 

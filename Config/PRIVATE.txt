@@ -51,23 +51,31 @@ CONFIG_PACKAGE_kmod-nft-socket=y
 # 仅保留 jdcloud_re-cs-02，减少镜像产物与编译耗时。
 # (本文件由 Scripts/Settings.sh 在 GENERAL + 设备配置之后 cat 追加到 .config，
 #  kconfig 后值覆盖前值，make defconfig 生效；不在此处 =n 的设备仍会编译。)
-CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_qihoo_360v6 is not set
-CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_anysafe_e1 is not set
-CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_cmiot_ax18 is not set
-CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_dptech_ap3000-2c is not set
-CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_glinet_gl-ax1800 is not set
-CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_glinet_gl-axt1800 is not set
-CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_jdcloud_re-ss-01 is not set
-CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_link_nn6000-v1 is not set
-CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_link_nn6000-v2 is not set
-CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_linksys_mr7350 is not set
-CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_linksys_mr7500 is not set
-CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_philips_ly1800 is not set
-CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_redmi_ax5 is not set
-CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_redmi_ax5-jdcloud is not set
-CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_sy_y6010 is not set
-CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_xiaomi_ax1800 is not set
-CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_zn_m2 is not set
+#
+# ⚠️ 关闭开关必须写 "# CONFIG_X is not set"（带 #），这是 kconfig 的规范写法，
+#    conf 解析器会把它识别为 n（与 2026-09-09 release 产物仅含 jdcloud 一致）。
+#    绝不能去掉 # 写成 "CONFIG_X is not set"：
+#    OpenWrt 顶层构建在 GNU make 里 include .config（prepare-tmpinfo），
+#    无 # 的 "is not set" 行既不是合法 make 语法也不是合法 kconfig 语法，
+#    make 会直接报 ".config:NNN: *** missing separator" 编译失败
+#    （事故：run 34721609785，2026-09-12 周编译失败）。
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_qihoo_360v6 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_anysafe_e1 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_cmiot_ax18 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_dptech_ap3000-2c is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_glinet_gl-ax1800 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_glinet_gl-axt1800 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_jdcloud_re-ss-01 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_link_nn6000-v1 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_link_nn6000-v2 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_linksys_mr7350 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_linksys_mr7500 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_philips_ly1800 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_redmi_ax5 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_redmi_ax5-jdcloud is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_sy_y6010 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_xiaomi_ax1800 is not set
+# CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_zn_m2 is not set
 
 # ============ 网络管理 / 诊断工具 ============
 # nmap (7.99, immortalwrt/packages master snapshot)

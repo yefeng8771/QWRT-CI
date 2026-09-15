@@ -5,6 +5,13 @@
 #     自定义经 Scripts/PRIVATE.sh (被 Packages.sh source) + Config/PRIVATE.txt 注入
 #   - 被 Weekly-Build.yml 通过 workflow_call 调用
 #   - 不依赖 brand.sh 运行时改 yml, 上游同步即便覆盖 QCA workflow 也不影响本产物
+#
+# 预检 job: WRT-CORE 的 Custom Settings 会把 Config/IPQ60XX-WIFI-YES.txt +
+# GENERAL.txt + PRIVATE.txt 直接 cat 成 .config, 且 GNU make 会 include 它
+# (prepare-tmpinfo)。任何一行语法错误都会让编译在 6 分钟后失败且报错晦涩
+# (事故: run 34721609785, "CONFIG_X is not set" 去掉 # 后报 missing separator)。
+# 故编译前先用秒级预检把这类错误拦下。周编译 (Weekly-Build workflow_call) 与
+# 手动触发 (workflow_dispatch) 两条路径都经过本 job。
 name: QWRT
 
 on:
@@ -37,7 +44,41 @@ permissions:
   actions: write  # WRT-CORE Update Caches 步 gh cache delete 需 actions:write, 否则 HTTP 403
 
 jobs:
+  # 秒级配置预检: 拦截 .config 片段语法错误, 避免烧掉整轮 runner 时间
+  precheck:
+    name: 配置预检
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      # ⚠️ 需与下方 QWRT job 的 WRT_CONFIG 保持一致
+      WRT_CONFIG: IPQ60XX-WIFI-YES
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 校验器自检
+        # 先确认校验器能拦截已知坏样例，防止校验器本身失效变"永真"
+        run: |
+          set -euo pipefail
+          printf 'CONFIG_PACKAGE_foo=y\nCONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_zn_m2 is not set\n' > /tmp/bad.cfg
+          if .github/scripts/check-config.sh /tmp/bad.cfg >/dev/null 2>&1; then
+            echo "::error::校验器未能拦截已知的坏样例，校验器自身有缺陷"
+            exit 1
+          fi
+          echo "校验器自检通过（能拦截坏样例）"
+
+      - name: 校验 .config 片段语法
+        # 与 WRT-CORE.yml Custom Settings 步骤 cat 进 .config 的文件保持一致
+        # （Settings.sh 另追加的 luci/theme 固定 4 行与 WRT_PACKAGE 为受控输入，不在校验范围）
+        run: |
+          set -euo pipefail
+          .github/scripts/check-config.sh \
+            "Config/${WRT_CONFIG}.txt" Config/GENERAL.txt Config/PRIVATE.txt
+
   QWRT:
+    needs: precheck
     uses: ./.github/workflows/WRT-CORE.yml
     with:
       WRT_CONFIG: IPQ60XX-WIFI-YES
