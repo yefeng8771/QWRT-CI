@@ -2,7 +2,7 @@
 # PRIVATE.sh — QWRT-CI 私有注入脚本 (被 VIKINGYFY 上游 Packages.sh 在 "Custom Packages" 步 source)
 #
 # 走 VIKINGYFY 原生 PRIVATE.sh 钩子 (Packages.sh: `source $GITHUB_WORKSPACE/Scripts/PRIVATE.sh`),
-# 不修改上游任何文件。CWD = $GITHUB_WORKSPACE/wrt/package/  (wrt 根 = ..)
+# 不修改上游任何文件。CWD 由下方归一化逻辑统一为 wrt/package/  (wrt 根 = ..)
 #
 # 职责 (在 make 之前完成全部资产就位):
 #   [1] 注入 stundeck 包源 + 指向 prebuilt 二进制的 stundeck-build.mk
@@ -19,6 +19,17 @@
 # 版本来源: 全部从 .github/packages.json 读取, 不再运行时动态解析。
 #           新增/调整依赖只改 packages.json, 不动本文件。
 set -euo pipefail
+
+# --- CWD 归一化 (2026-09-20) ---
+# 上游 VIKINGYFY 2026-09-19 改版后, source 本脚本时 CWD 由 wrt/package 变为 wrt 根;
+# 且 wrt 是指向 /mnt/build_wrt 的符号链接, CWD=wrt 根时 ".." 物理解析到 /mnt (root 所有)
+# → "Permission denied"。故不论 CWD 是 wrt 根还是 wrt/package, 先统一切到 wrt/package。
+if [ -f ./Config.in ] && [ -d ./package ]; then
+    cd ./package
+elif [ ! -f ../Config.in ]; then
+    echo "[qwrt]   ERROR: cannot locate wrt tree from CWD=$(pwd)" >&2
+    exit 1
+fi
 
 GW="${GITHUB_WORKSPACE:?GITHUB_WORKSPACE not set}"
 WRT_ROOT=".."            # wrt/package/ 的父 = wrt 根 (TOPDIR)
