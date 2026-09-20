@@ -257,9 +257,17 @@ else
     if [ -z "$FEED_VERSION" ]; then
         echo "[qwrt]   WARNING: cannot read feed PKG_VERSION, patch skipped"
     elif dpkg --compare-versions "$FEED_VERSION" lt "$ST_VERSION_CMP"; then
-        sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=${ST_VERSION}/" "$ST_FEED_MF"
+        # apk 打包器禁止版本号含 '-' → 转成 apk 合法形式 (2.1.6-rc.1 -> 2.1.6_rc1),
+        # 同时注入 PKG_REAL_VERSION 供下载 URL/tar 包名使用 (GitHub tag 仍是 v2.1.6-rc.1)。
+        # _rc 后缀本身就是 apk 的预发布语义 (2.1.6_rc1 < 2.1.6)。
+        ST_VERSION_APK="${ST_VERSION//-rc./_rc}"
+        ST_VERSION_APK="${ST_VERSION_APK//-/_}"
+        sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=${ST_VERSION_APK}/" "$ST_FEED_MF"
         sed -i "s/^PKG_HASH:=.*/PKG_HASH:=${ST_SHA256}/" "$ST_FEED_MF"
-        echo "[qwrt]   syncthing patched: ${FEED_VERSION} -> ${ST_VERSION}"
+        if [ "$ST_VERSION_APK" != "$ST_VERSION" ]; then
+            sed -i "\|^PKG_VERSION:=|a PKG_REAL_VERSION:=${ST_VERSION}\nPKG_SOURCE:=syncthing-source-v\$(PKG_REAL_VERSION).tar.gz\nPKG_SOURCE_URL:=https://github.com/syncthing/syncthing/releases/download/v\$(PKG_REAL_VERSION)" "$ST_FEED_MF"
+        fi
+        echo "[qwrt]   syncthing patched: ${FEED_VERSION} -> ${ST_VERSION_APK} (apk-legal, real ${ST_VERSION})"
     else
         echo "[qwrt]   syncthing patch dormant: feed ${FEED_VERSION} >= pinned ${ST_VERSION}"
     fi
