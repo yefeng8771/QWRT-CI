@@ -265,7 +265,11 @@ else
         sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=${ST_VERSION_APK}/" "$ST_FEED_MF"
         sed -i "s/^PKG_HASH:=.*/PKG_HASH:=${ST_SHA256}/" "$ST_FEED_MF"
         if [ "$ST_VERSION_APK" != "$ST_VERSION" ]; then
-            sed -i "\|^PKG_VERSION:=|a PKG_REAL_VERSION:=${ST_VERSION}\nPKG_SOURCE:=syncthing-source-v\$(PKG_REAL_VERSION).tar.gz\nPKG_SOURCE_URL:=https://github.com/syncthing/syncthing/releases/download/v\$(PKG_REAL_VERSION)" "$ST_FEED_MF"
+            # 注意: 原 Makefile 的 PKG_SOURCE/PKG_SOURCE_URL 用 := 立即展开且在后面,
+            # 插入在其前会被覆盖 → 必须直接替换原行, 并追加 PKG_REAL_VERSION 定义。
+            sed -i "s|^PKG_SOURCE:=.*|PKG_SOURCE:=syncthing-source-v\$(PKG_REAL_VERSION).tar.gz|" "$ST_FEED_MF"
+            sed -i "s|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://github.com/syncthing/syncthing/releases/download/v\$(PKG_REAL_VERSION)|" "$ST_FEED_MF"
+            sed -i "\|^PKG_VERSION:=|a PKG_REAL_VERSION:=${ST_VERSION}" "$ST_FEED_MF"
         fi
         echo "[qwrt]   syncthing patched: ${FEED_VERSION} -> ${ST_VERSION_APK} (apk-legal, real ${ST_VERSION})"
     else
