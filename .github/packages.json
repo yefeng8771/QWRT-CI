@@ -4,8 +4,8 @@
     "ciBranch": "main",
     "sourceRepo": "VIKINGYFY/immortalwrt",
     "sourceBranch": "main",
-    "currentCiCommit": "48bf00d0194c7d5164bed5bb41de398cfcaf5851",
-    "currentSourceCommit": "20edd8312f4f307c882f8861f7050ee8da555f24"
+    "currentCiCommit": "36cebddc43cdabcf812bc24e7769a4ab836256dd",
+    "currentSourceCommit": "0fb9b10cb9df51fb076470e1dd93d1c30dd89d83"
   },
   "githubRelease": [
     {
@@ -14,8 +14,8 @@
       "sourceRepo": "Nciae-Zyh/stundeck",
       "assetSuffix": "-linux-arm64.tar.gz",
       "prerelease": false,
-      "currentTag": "v0.1.202609081051",
-      "currentSha256": "a11ea7bd699b696d68bfd91dbbd5931438615ceba95a54d65d098af6c02e2221",
+      "currentTag": "v0.1.20261001043905",
+      "currentSha256": "1c60492213efd7dcd44515b58b6973cd887ad5347756954ad1064b56aa180e70",
       "currentSourceTag": "v0.1.1"
     },
     {
@@ -26,8 +26,8 @@
       "requiredBuildTags": [
         "with_ebpf"
       ],
-      "currentTag": "v1.15.0-alpha.8-reF1nd",
-      "currentSha256": "9cfb9ce1fe857525d355bdb2d01d1b2e590e28cb39f4afdf3a35d30e9dbc698d"
+      "currentTag": "v1.15.0-alpha.9-reF1nd",
+      "currentSha256": "09c160b0a3934828e64f573e75527494f5beaa173fcb6f0daa660851218445c8"
     }
   ],
   "gitRepo": [
@@ -35,7 +35,7 @@
       "name": "natmapt",
       "repo": "muink/openwrt-natmapt",
       "ref": "master",
-      "currentCommit": "60c3a8e4529c2780d6bfefc9c12e54f00f5f0e49"
+      "currentCommit": "21d8d7968fef8219a39120b28d6a73fe4eda23c7"
     },
     {
       "name": "luci-app-natmapt",
@@ -52,8 +52,8 @@
       "feedMakefile": "utils/syncthing/Makefile",
       "prerelease": true,
       "sourceAssetTemplate": "syncthing-source-{tag}.tar.gz",
-      "sourceVersion": "v2.1.6-rc.3",
-      "sourceSha256": "3209c66e1b9709b8ea29e836b467d7c9c2066df69d572797bb5a4c701af1816b"
+      "sourceVersion": "v2.1.6-rc.4",
+      "sourceSha256": "efcf2387554790bf0b0d49fbf50991291f433fb8e8c573261e2e105c9bb70c87"
     }
   ]
 }
