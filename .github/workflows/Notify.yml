@@ -1,6 +1,9 @@
 # 统一监听三条主线的执行结果并推送通知。
 # 用 workflow_run 而非在各 workflow 内嵌通知步骤：上游文件不可修改，
 # 且集中一处便于统一渠道与格式。
+#
+# 通知策略：每日同步上游成功时静默（天天报太吵），失败必报；
+# 每周跟踪依赖更新 / 每周编译固件成功失败都报。
 name: 执行结果通知
 
 on:
@@ -25,27 +28,63 @@ jobs:
           CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           URL: ${{ github.event.workflow_run.html_url }}
           EVENT: ${{ github.event.workflow_run.event }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          CREATED: ${{ github.event.workflow_run.created_at }}
+          UPDATED: ${{ github.event.workflow_run.updated_at }}
         run: |
           set -euo pipefail
           repo_short="${REPO#*/}"
+
+          # 每日同步成功时静默：天天报太吵，失败必报
+          if [ "$NAME" = "每日同步上游" ] && [ "$CONCLUSION" = "success" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "每日同步成功，静默不打扰" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
           case "$EVENT" in
             schedule) ev="定时" ;;
             workflow_dispatch) ev="手动" ;;
             workflow_run) ev="联动" ;;
             *) ev="$EVENT" ;;
           esac
+
+          dur_s=$(( $(date -d "$UPDATED" +%s) - $(date -d "$CREATED" +%s) ))
+          if [ "$dur_s" -ge 3600 ]; then
+            dur="$((dur_s/3600))小时$((dur_s%3600/60))分"
+          elif [ "$dur_s" -ge 60 ]; then
+            dur="$((dur_s/60))分$((dur_s%60))秒"
+          else
+            dur="${dur_s}秒"
+          fi
+
           if [ "$CONCLUSION" = "success" ]; then
             icon="✅"; result="执行成功"
           else
             icon="❌"; result="执行失败(${CONCLUSION})"
             echo "::error::${NAME} 执行失败（${CONCLUSION}）：${URL}"
           fi
-          # 仓库名 + 链接，点一下直接跳到那次 run
-          text="${icon} <a href=\"${URL}\">[${repo_short}] ${NAME}</a> ${result}（${ev}）"
-          echo "text=${text}" >> "$GITHUB_OUTPUT"
+
+          # hashtag 不支持连字符，转成下划线
+          tag="${repo_short//-/_}"
+
+          {
+            echo "${icon} ${NAME} · ${result}"
+            echo "📦 ${repo_short}｜${HEAD_BRANCH} @ ${HEAD_SHA:0:7}"
+            echo "⏱️ 耗时 ${dur}｜触发：${ev}"
+            echo "🔗 <a href=\"${URL}\">查看 Run</a>"
+            echo ""
+            echo "#${tag} #actions"
+          } > /tmp/tg.txt
+          {
+            echo "text<<EOF"
+            cat /tmp/tg.txt
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: 推送 Telegram 通知
-        if: always()
+        if: always() && steps.msg.outputs.skip != 'true' && steps.msg.outputs.text != ''
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
@@ -55,14 +94,12 @@ jobs:
           # 仅在 secret 就绪时发送通知
           if [ -z "${TG_BOT_TOKEN:-}" ] || [ -z "${TG_CHAT_ID:-}" ]; then
             echo "TG_BOT_TOKEN 或 TG_CHAT_ID 未配置，跳过通知推送"
-            echo "待配置后通知内容将发送到 Telegram"
-            # 输出到 step summary 以便在 Actions 页面查看
             echo "$TEXT" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           curl -fsSL -o /dev/null \
             "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
-            -d "chat_id=${TG_CHAT_ID}" \
-            -d "text=${TEXT}" \
-            -d "disable_web_page_preview=true" \
-            -d "parse_mode=HTML"
+            --data-urlencode "chat_id=${TG_CHAT_ID}" \
+            --data-urlencode "text=${TEXT}" \
+            --data-urlencode "disable_web_page_preview=true" \
+            --data-urlencode "parse_mode=HTML"
