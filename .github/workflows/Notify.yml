@@ -144,15 +144,9 @@ jobs:
             exit 0
           fi
           if [ -n "$REPORT" ]; then
-            TEXT="${HEADER}
-
-${REPORT}
-
-${TAGS}"
+            TEXT="$(printf '%s\n\n%s\n\n%s' "$HEADER" "$REPORT" "$TAGS")"
           else
-            TEXT="${HEADER}
-
-${TAGS}"
+            TEXT="$(printf '%s\n\n%s' "$HEADER" "$TAGS")"
           fi
           curl -fsSL -o /dev/null \
             "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
