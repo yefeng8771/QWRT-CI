@@ -96,7 +96,7 @@ jobs:
             exit 0
           fi
           mkdir -p /tmp/weekly
-          gh api "repos/${GH_REPO}/actions/runs/${RUN_ID}/artifacts/${aid}/zip" \
+          gh api "repos/${GH_REPO}/actions/artifacts/${aid}/zip" \
             > /tmp/weekly.zip
           unzip -o -q /tmp/weekly.zip -d /tmp/weekly
           md="$(find /tmp/weekly -name '*.md' | head -n1)"
