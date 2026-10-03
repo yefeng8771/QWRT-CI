@@ -81,9 +81,14 @@ jobs:
             ' <<< "$latest")"
 
             # 构建层（fork 交叉编译）落后于源仓库时在报告中提示
+            # 时间戳版本（如 v0.1.20261001043905）无法用字符串包含判断源版本，
+            # 改按发布时间比较：只在构建早于上游发布时才警告
             src_tag=""
+            src_published=""
             if [ -n "$src_repo" ]; then
-              src_tag="$(gh api "repos/${src_repo}/releases/latest" --jq '.tag_name' 2>/dev/null || echo "")"
+              src_rel="$(gh api "repos/${src_repo}/releases/latest" 2>/dev/null || echo '{}')"
+              src_tag="$(jq -r '.tag_name // ""' <<< "$src_rel")"
+              src_published="$(jq -r '.published_at // ""' <<< "$src_rel")"
             fi
 
             status=unchanged
@@ -97,8 +102,9 @@ jobs:
             fi
 
             jq -n --arg name "$name" --arg status "$status" --arg from "$cur_tag" \
-                  --arg to "$new_tag" --arg src "$src_tag" --arg repo "$repo" \
-              '{name: $name, status: $status, from: $from, to: $to, sourceTag: $src, repo: $repo}' \
+                  --arg to "$new_tag" --arg src "$src_tag" --arg srcpub "$src_published" \
+                  --arg repo "$repo" \
+              '{name: $name, status: $status, from: $from, to: $to, sourceTag: $src, sourcePublishedAt: $srcpub, repo: $repo}' \
               > "$REPORT_DIR/rel-${name}.json"
           done
 
