@@ -4,6 +4,7 @@
 #
 # 通知策略：每日同步上游成功时静默（天天报太吵），失败必报；
 # 每周跟踪依赖更新 / 每周编译固件成功失败都报。
+# 跟踪流成功时，会把当次的依赖周报排版后附在消息里。
 name: 执行结果通知
 
 on:
@@ -20,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: 组装消息
+      - name: 组装消息头
         id: msg
         env:
           REPO: ${{ github.repository }}
@@ -70,32 +71,88 @@ jobs:
           tag="${repo_short//-/_}"
 
           {
+            echo "header<<EOF"
             echo "${icon} ${NAME} · ${result}"
             echo "📦 ${repo_short}｜${HEAD_BRANCH} @ ${HEAD_SHA:0:7}"
             echo "⏱️ 耗时 ${dur}｜触发：${ev}"
             echo "🔗 <a href=\"${URL}\">查看 Run</a>"
-            echo ""
-            echo "#${tag} #actions"
-          } > /tmp/tg.txt
+            echo "EOF"
+            echo "tags=#${tag} #actions"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: 下载并排版周报
+        id: weekly
+        if: ${{ github.event.workflow_run.name == '每周跟踪依赖更新' && github.event.workflow_run.conclusion == 'success' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          aid="$(gh api "repos/${GH_REPO}/actions/runs/${RUN_ID}/artifacts" \
+            --jq '.artifacts[] | select(.name=="weekly-report") | .id' | head -n1)"
+          if [ -z "$aid" ]; then
+            echo "未找到 weekly-report 附件，跳过周报"
+            exit 0
+          fi
+          mkdir -p /tmp/weekly
+          gh api "repos/${GH_REPO}/actions/runs/${RUN_ID}/artifacts/${aid}/zip" \
+            > /tmp/weekly.zip
+          unzip -o -q /tmp/weekly.zip -d /tmp/weekly
+          md="$(find /tmp/weekly -name '*.md' | head -n1)"
+          [ -n "$md" ] || { echo "附件中无 md 文件"; exit 0; }
+
+          python3 - "$md" > /tmp/weekly.html <<'PYEOF'
+          import re, html, sys
+          t = open(sys.argv[1], encoding='utf-8').read()
+          t = html.escape(t)
+          t = re.sub(r'(?m)^### (.+)$', r'<b>\1</b>', t)
+          t = re.sub(r'(?m)^## (.+)$', r'<b>\1</b>', t)
+          t = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', t)
+          t = re.sub(r'`(.+?)`', r'<code>\1</code>', t)
+          t = re.sub(r'(?m)^- ', '• ', t)
+          # Telegram 单条消息 4096 字上限，留足消息头空间
+          if len(t) > 3200:
+              t = t[:3200] + '\n<i>…内容过长，完整版见 Actions 附件 weekly-report</i>'
+          sys.stdout.write(t)
+          PYEOF
+          echo "--- 周报已转排版 ---"
           {
-            echo "text<<EOF"
-            cat /tmp/tg.txt
+            echo "report<<EOF"
+            cat /tmp/weekly.html
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
       - name: 推送 Telegram 通知
-        if: always() && steps.msg.outputs.skip != 'true' && steps.msg.outputs.text != ''
+        if: always() && steps.msg.outputs.skip != 'true' && steps.msg.outputs.header != ''
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          TEXT: ${{ steps.msg.outputs.text }}
+          HEADER: ${{ steps.msg.outputs.header }}
+          REPORT: ${{ steps.weekly.outputs.report }}
+          TAGS: ${{ steps.msg.outputs.tags }}
         run: |
           set -euo pipefail
           # 仅在 secret 就绪时发送通知
           if [ -z "${TG_BOT_TOKEN:-}" ] || [ -z "${TG_CHAT_ID:-}" ]; then
             echo "TG_BOT_TOKEN 或 TG_CHAT_ID 未配置，跳过通知推送"
-            echo "$TEXT" >> "$GITHUB_STEP_SUMMARY"
+            {
+              echo "$HEADER"; echo
+              [ -n "$REPORT" ] && { echo "$REPORT"; echo; }
+              echo "$TAGS"
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 0
+          fi
+          if [ -n "$REPORT" ]; then
+            TEXT="${HEADER}
+
+${REPORT}
+
+${TAGS}"
+          else
+            TEXT="${HEADER}
+
+${TAGS}"
           fi
           curl -fsSL -o /dev/null \
             "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
