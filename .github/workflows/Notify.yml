@@ -20,17 +20,29 @@ jobs:
       - name: 组装消息
         id: msg
         env:
+          REPO: ${{ github.repository }}
           NAME: ${{ github.event.workflow_run.name }}
           CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           URL: ${{ github.event.workflow_run.html_url }}
+          EVENT: ${{ github.event.workflow_run.event }}
         run: |
           set -euo pipefail
+          repo_short="${REPO#*/}"
+          case "$EVENT" in
+            schedule) ev="定时" ;;
+            workflow_dispatch) ev="手动" ;;
+            workflow_run) ev="联动" ;;
+            *) ev="$EVENT" ;;
+          esac
           if [ "$CONCLUSION" = "success" ]; then
-            echo "text=✅ ${NAME} 执行成功" >> "$GITHUB_OUTPUT"
+            icon="✅"; result="执行成功"
           else
+            icon="❌"; result="执行失败(${CONCLUSION})"
             echo "::error::${NAME} 执行失败（${CONCLUSION}）：${URL}"
-            echo "text=❌ ${NAME} 执行失败（${CONCLUSION}）" >> "$GITHUB_OUTPUT"
           fi
+          # 仓库名 + 链接，点一下直接跳到那次 run
+          text="${icon} <a href=\"${URL}\">[${repo_short}] ${NAME}</a> ${result}（${ev}）"
+          echo "text=${text}" >> "$GITHUB_OUTPUT"
 
       - name: 推送 Telegram 通知
         if: always()
