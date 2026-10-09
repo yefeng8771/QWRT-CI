@@ -4,8 +4,8 @@
     "ciBranch": "main",
     "sourceRepo": "VIKINGYFY/immortalwrt",
     "sourceBranch": "main",
-    "currentCiCommit": "36cebddc43cdabcf812bc24e7769a4ab836256dd",
-    "currentSourceCommit": "0fb9b10cb9df51fb076470e1dd93d1c30dd89d83"
+    "currentCiCommit": "5d31706bd2e582c961e2770c17d0da51f1d67fa1",
+    "currentSourceCommit": "0f29bdd9b988497b2c7bfb143042afede172fc05"
   },
   "githubRelease": [
     {
@@ -14,8 +14,8 @@
       "sourceRepo": "Nciae-Zyh/stundeck",
       "assetSuffix": "-linux-arm64.tar.gz",
       "prerelease": false,
-      "currentTag": "v0.1.20261001043905",
-      "currentSha256": "1c60492213efd7dcd44515b58b6973cd887ad5347756954ad1064b56aa180e70",
+      "currentTag": "v0.1.20261003034955",
+      "currentSha256": "f4f3a7fa94368bd91d405c4c5fee499ad35d4419d08f3fb36c2980429ffc137e",
       "currentSourceTag": "v0.1.1"
     },
     {
@@ -26,8 +26,8 @@
       "requiredBuildTags": [
         "with_ebpf"
       ],
-      "currentTag": "v1.15.0-alpha.9-reF1nd",
-      "currentSha256": "09c160b0a3934828e64f573e75527494f5beaa173fcb6f0daa660851218445c8"
+      "currentTag": "v1.15.0-alpha.11-reF1nd",
+      "currentSha256": "6840a1c1ec3d924bf6620126a2736a89098bf562c50eccd2c2de577dc8a75e1c"
     }
   ],
   "gitRepo": [
@@ -52,8 +52,8 @@
       "feedMakefile": "utils/syncthing/Makefile",
       "prerelease": true,
       "sourceAssetTemplate": "syncthing-source-{tag}.tar.gz",
-      "sourceVersion": "v2.1.6-rc.4",
-      "sourceSha256": "efcf2387554790bf0b0d49fbf50991291f433fb8e8c573261e2e105c9bb70c87"
+      "sourceVersion": "v2.1.7-rc.1",
+      "sourceSha256": "42f7f8bd1fcae039ab272ab36612e46a040b62316b69913b7dc273579cd58e8d"
     }
   ]
 }
