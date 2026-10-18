@@ -4,7 +4,7 @@
 
 ---
 
-[LiBwrt-Ai](https://api.zipimg.cn/register?aff=LR7FSZ2ZZ4D3)
+[LiBwrt-Ai](https://api.zipimg.cn/register?aff=FFPS3UMJ8HJD)
 
 1. **禁止修改任何上游文件**（文件头带 `# SPDX-License-Identifier: MIT` + `# Copyright (C) 2026 VIKINGYFY`）。  
    所有自定义必须走新增文件 + 上游原生钩子：
@@ -125,60 +125,12 @@ gh workflow run 每日同步上游
 - **编译超时看门狗**：240 分钟自动取消（绕过 reusable workflow 不支持 `timeout-minutes` 的限制）。同时监听 `QWRT` 与 `每周编译固件` 两条入口：`workflow_call` 内嵌调用不产生独立 run，若只监听 `QWRT` 将永远捕获不到周编译路径
 - **配置预检**：`QWRT.yml` 在编译前用 `check-config.sh` 秒级校验 `Config/IPQ60XX-WIFI-YES.txt / GENERAL.txt / PRIVATE.txt` 的 .config 语法。WRT-CORE 会把这些片段 cat 成 `.config` 且 GNU make 直接 include 它，语法错误会让编译在 ~6 分钟后以晦涩的 `missing separator` 失败（事故：run 34721609785）。**kconfig 关闭开关必须写 `# CONFIG_X is not set`（带 #），去掉 # 既不是合法 make 语法也不是合法 kconfig 语法**
 
----
+## Star History
 
-## 🔗 相关仓库
-
-| 仓库 | 说明 |
-|------|------|
-| [VIKINGYFY/OpenWRT-CI](https://github.com/VIKINGYFY/OpenWRT-CI) | 上游云编译框架 |
-| [VIKINGYFY/immortalwrt](https://github.com/VIKINGYFY/immortalwrt) | 上游源码 |
-| [yefeng8771/stundeck](https://github.com/yefeng8771/stundeck) | stundeck 构建层（fork 自 Nciae-Zyh/stundeck） |
-| [muink/openwrt-natmapt](https://github.com/muink/openwrt-natmapt) | natmapt 包源 |
-| [reF1nd/sing-box-releases](https://github.com/reF1nd/sing-box-releases) | sing-box 预发布二进制 |
-
----
-
-## 📝 周报示例
-
-每次 `Track-Packages.yml` 运行后，会生成周报（artifact `weekly-report`），格式如下：
-
-```markdown
-## 本周依赖变更（2026-09-08）
-
-### 有更新
-- **sing-box**：`v1.15.0-beta.14` → `v1.15.0-beta.16`
-- **natmapt**：`a1b2c3d` → `e4f5g6h`（7 个提交）
-- **syncthing**：`v2.1.4-rc.1` → `v2.1.4-rc.2`
-
-### 产物校验
-- sing-box `v1.15.0-beta.16`：架构 ARM aarch64，build tag 已验证
-
-### 无变化
-- stundeck `v0.1.202609021106`、luci-app-natmapt `f7g8h9i`
-
-### ⚠️ 需人工介入
-- stundeck：构建层 `v0.1.202609021106` 落后于源仓库 `v0.1.1`，请确认交叉编译是否已跟进
-```
-
----
-
-## ❓ FAQ
-
-**Q: Auto-Clean.yml 为什么被禁用？**  
-A: 它配置了 `releases_keep_latest: 0` + `delete_tags: true`，每天会清空所有 Release 和 Tag。在周编译节奏下，必须永久禁用。
-
-**Q: syncthing 为什么用预览版（rc）？**  
-A: 用户策略为「syncthing 版本总是最新预览版」。Track-Packages 每周把最新 rc 的 tag 与源码包 sha256 写回 `packages.json` 的 `feedPatch` 条目，编译时由 PRIVATE.sh sed 进 feeds 的 syncthing Makefile。若 feed 自带版本已追平/超过锁定版本，补丁自动休眠（周报会提示），待更新的 rc 发布后自动恢复。想改为稳定版最新，把清单里 syncthing 的 `prerelease` 改为 `false` 即可。
-
-**Q: 如何查看固件内的依赖版本？**  
-A: 固件内已写入 `/etc/qwrt-manifest.json`，在设备上执行 `cat /etc/qwrt-manifest.json` 即可查看。
-
-**Q: 为什么不用 `@main` / `@master` 引用 Action？**  
-A: 浮动引用不可复现。本仓新增 Action 全部锁定大版本号（如 `@v4`），上游已有浮动引用无法修改，但本仓不新增。
-
----
-
-## 📄 License
-
-本仓自有文件采用 MIT License。上游文件版权归 VIKINGYFY 所有。
+<a href="https://www.star-history.com/?repos=vikingyfy%2Fopenwrt-ci&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=vikingyfy/openwrt-ci&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=vikingyfy/openwrt-ci&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=vikingyfy/openwrt-ci&type=date&legend=top-left" />
+ </picture>
+</a>
