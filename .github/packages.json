@@ -4,7 +4,7 @@
     "ciBranch": "main",
     "sourceRepo": "VIKINGYFY/immortalwrt",
     "sourceBranch": "main",
-    "currentCiCommit": "fefbc8229be8000c5477508af7e4dba38bfb804e",
+    "currentCiCommit": "e7ea519bfc228ff200c18265064717cb9a5f6170",
     "currentSourceCommit": "f9b0ce7650fdcc7f4793256a3ae43c1132e2bc49"
   },
   "githubRelease": [
@@ -26,8 +26,8 @@
       "requiredBuildTags": [
         "with_ebpf"
       ],
-      "currentTag": "v1.15.0-alpha.11-reF1nd",
-      "currentSha256": "6840a1c1ec3d924bf6620126a2736a89098bf562c50eccd2c2de577dc8a75e1c"
+      "currentTag": "v1.15.0-alpha.13-reF1nd",
+      "currentSha256": "a7488e25fa1e07ddb7c290bcef6ce4d42d7e452e04eafd43ded96b8fe70a343a"
     }
   ],
   "gitRepo": [
