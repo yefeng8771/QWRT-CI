@@ -47,6 +47,9 @@ fi
 # 断言清单存在
 test -f "$MANIFEST" || { echo "[qwrt]   ERROR: $MANIFEST not found" >&2; exit 1; }
 
+# 补齐缺失的 libffi；上游已有时不覆盖。
+bash "$GW/Scripts/install-libffi.sh" "$WRT_ROOT"
+
 # ============ [1] StunDeck opkg 包 + release 裸二进制 ============
 echo "[qwrt] [1/6] Injecting stundeck opkg package + pulling release binaries..."
 
