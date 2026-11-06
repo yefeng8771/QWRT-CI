@@ -4,7 +4,7 @@
     "ciBranch": "main",
     "sourceRepo": "VIKINGYFY/immortalwrt",
     "sourceBranch": "main",
-    "currentCiCommit": "e7ea519bfc228ff200c18265064717cb9a5f6170",
+    "currentCiCommit": "c4cd7d0c44cdaa21c73fc2ea59532c0ec6069a28",
     "currentSourceCommit": "f9b0ce7650fdcc7f4793256a3ae43c1132e2bc49"
   },
   "githubRelease": [
@@ -14,9 +14,9 @@
       "sourceRepo": "Nciae-Zyh/stundeck",
       "assetSuffix": "-linux-arm64.tar.gz",
       "prerelease": false,
-      "currentTag": "v0.1.20261003034955",
-      "currentSha256": "f4f3a7fa94368bd91d405c4c5fee499ad35d4419d08f3fb36c2980429ffc137e",
-      "currentSourceTag": "v0.1.1"
+      "currentTag": "v0.1.20261105085652",
+      "currentSha256": "720e40b26ccabfa1a3efed66f47671001240be905eeccd604be22c0478082ef9",
+      "currentSourceTag": "v0.1.2"
     },
     {
       "name": "sing-box",
@@ -35,13 +35,13 @@
       "name": "natmapt",
       "repo": "muink/openwrt-natmapt",
       "ref": "master",
-      "currentCommit": "32ae7f63cb5690897d3e1ede1a94cce44c0521fb"
+      "currentCommit": "a5d59280b4af419a8ac1ea2ac3c4095b26a088e7"
     },
     {
       "name": "luci-app-natmapt",
       "repo": "muink/luci-app-natmapt",
       "ref": "master",
-      "currentCommit": "c8eb57066da1e9612ea2b4057be63f015c954140"
+      "currentCommit": "1b023f9b968e4cf9e786a7a3061225ae1cf8e328"
     }
   ],
   "feedPatch": [
