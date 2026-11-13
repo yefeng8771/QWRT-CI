@@ -26,7 +26,7 @@ concurrency:
 jobs:
   guard:
     name: 监视编译时长
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 250
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

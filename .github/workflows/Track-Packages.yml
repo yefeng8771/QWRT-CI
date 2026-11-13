@@ -25,7 +25,7 @@ concurrency:
 jobs:
   track:
     name: 检查并回写依赖清单
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

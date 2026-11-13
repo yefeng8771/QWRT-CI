@@ -18,7 +18,7 @@ permissions:
 jobs:
   notify:
     name: 推送执行结果
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: 组装消息头

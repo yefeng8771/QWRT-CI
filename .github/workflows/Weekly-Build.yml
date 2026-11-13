@@ -34,7 +34,7 @@ jobs:
     name: 滚动发布与清单快照
     needs: build
     if: always() && needs.build.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: 拉取代码
@@ -130,7 +130,7 @@ jobs:
   # 此处仅作确认标记
   manifest-in-firmware:
     name: 确认固件内清单
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 1
     steps:
       - name: 确认清单文件已就位
