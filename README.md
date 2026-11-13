@@ -4,7 +4,7 @@
 
 ---
 
-[LiBwrt-Ai](https://api.zipimg.cn/register?aff=FFPS3UMJ8HJD)
+[Krill-Code](https://www.krill-code.com/register?invite=959NHQCZGT)
 
 1. **禁止修改任何上游文件**（文件头带 `# SPDX-License-Identifier: MIT` + `# Copyright (C) 2026 VIKINGYFY`）。  
    所有自定义必须走新增文件 + 上游原生钩子：
