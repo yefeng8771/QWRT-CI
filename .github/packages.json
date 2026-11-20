@@ -14,9 +14,9 @@
       "sourceRepo": "Nciae-Zyh/stundeck",
       "assetSuffix": "-linux-arm64.tar.gz",
       "prerelease": false,
-      "currentTag": "v0.1.20261105085652",
-      "currentSha256": "720e40b26ccabfa1a3efed66f47671001240be905eeccd604be22c0478082ef9",
-      "currentSourceTag": "v0.1.2"
+      "currentTag": "v0.1.20261116085948",
+      "currentSha256": "bcedbe8134048f35b3defc55967e32a160eaf344539fe09b73e0502024686045",
+      "currentSourceTag": "v0.1.4"
     },
     {
       "name": "sing-box",
